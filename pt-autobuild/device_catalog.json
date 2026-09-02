@@ -1,0 +1,33 @@
+{
+  "defaults": {
+    "routers": "4331",
+    "switches": "2960",
+    "end_devices": "PC"
+  },
+  "routers": [
+    "1841",
+    "1941",
+    "2811",
+    "2901",
+    "2911",
+    "4321",
+    "4331",
+    "PT8200",
+    "IR8340"
+  ],
+  "switches": [
+    "2950T",
+    "2950-24",
+    "2960",
+    "2960-24TT",
+    "3560",
+    "IE-3400"
+  ],
+  "end_devices": [
+    "PC",
+    "Laptop",
+    "Tablet",
+    "Server",
+    "Smartphone"
+  ]
+}

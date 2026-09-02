@@ -5,9 +5,9 @@ mediante clics a ciegas con `pyautogui`. Proyecto independiente de pt-asistente.
 
 Alcance a proposito limitado:
 
-- Solo coloca dispositivos genericos en el lienzo.
+- Solo coloca dispositivos en el lienzo.
 - NO dibuja cables.
-- NO lee la pantalla (sin OCR, sin verificacion). Confia en las coordenadas calibradas.
+- NO lee la pantalla (sin OCR, sin verificacion). Confia en `coords.json` y en el catalogo.
 - NO configura ni renombra nada.
 
 ## Instalacion
@@ -16,128 +16,155 @@ Alcance a proposito limitado:
 pip install -r requirements.txt
 ```
 
+## Flujo de colocacion (por buscador)
+
+El buscador "Search for device" de Packet Tracer es **global y siempre visible**,
+asi que no hace falta abrir ninguna categoria. Cada dispositivo se coloca asi:
+
+```
+1. clic en search_field
+2. Ctrl+A + Supr                 (limpiar texto previo)
+3. escribir el nombre del modelo (filtra en vivo, sin Enter)
+4. esperar a que filtre
+5. clic en filtered_result       (posicion fija del icono unico)
+6. clic en la posicion calculada del lienzo
+```
+
 ## Escala de Windows / DPI
 
-Con la escala de pantalla de Windows distinta al 100 % (p. ej. 125 %), pyautogui
-por defecto trabaja en coordenadas "logicas" escaladas mientras que las capturas
-son en pixeles fisicos -> los clics se desvian.
+Con la escala de Windows distinta al 100 % (p. ej. 125 %), pyautogui por defecto
+trabaja en coordenadas "logicas" escaladas mientras que las capturas son en
+pixeles fisicos -> los clics se desvian.
 
-**No hay que cambiar la configuracion de Windows.** El proyecto lo compensa solo:
-[dpi_aware.py](dpi_aware.py) marca el proceso como *DPI aware* (per-monitor v2,
-con fallbacks) y se importa lo primero en `calibrate.py`, `build.py` y
-`test_search.py`. A partir de ahi, tamaño de pantalla, raton, capturas y clics
-van todos en pixeles fisicos reales y coinciden.
-
-Comprueba que funciona:
+**No hay que cambiar la configuracion de Windows.** [dpi_aware.py](dpi_aware.py)
+marca el proceso como *DPI aware* y se importa lo primero en `calibrate.py`,
+`build.py`, `test_place.py`, `test_search.py` y `check_dpi.py`. A partir de ahi
+todo va en pixeles fisicos reales.
 
 ```
 python check_dpi.py           # informe
 python check_dpi.py --watch   # + posicion del raton en vivo
 ```
 
-Debe decir `pyautogui.size() == resolucion fisica`. Con `--watch`, al mover el
-raton a la esquina inferior derecha debe leer la resolucion fisica completa
-(no una menor).
+Debe decir `pyautogui.size() == resolucion fisica`.
 
-> Recorta las imagenes de referencia y ejecuta siempre con la **misma** escala de
-> Windows. La Herramienta de Recortes de Windows 11 ya captura en pixeles fisicos,
-> asi que tus recortes actuales deberian servir; si algo no matchea tras el fix,
-> vuelve a recortar esa imagen.
+## 1. Calibracion
 
-## 1. Calibracion (hazlo primero) — automatica por imagen
+Genera `coords.json` con 4 datos: `search_field`, `filtered_result`,
+`canvas.top_left`, `canvas.bottom_right`.
 
-`calibrate.py` localiza los iconos de Packet Tracer en pantalla con
-`pyautogui.locateOnScreen()`, a partir de recortes PNG que preparas una vez en
-[reference_images/](reference_images/). Ya no hay que apuntar el mouse a mano.
+### 1a. Imagenes de referencia (una vez)
 
-### 1a. Preparar las imagenes de referencia
-
-Con Packet Tracer abierto en su posicion habitual y **modo "Network Devices"**
-activo, recorta con la Herramienta de Recortes de Windows y guarda como PNG en
-`reference_images/` (nombres exactos, ver [reference_images/README.md](reference_images/README.md)):
+En [reference_images/](reference_images/), PNG con nombres exactos
+(detalle en [reference_images/README.md](reference_images/README.md)):
 
 | Archivo | Que recortar |
 |---|---|
-| `router_icon.png` / `switch_icon.png` / `pc_icon.png` | Icono de cada **categoria** en la barra inferior |
-| `router_model.png` / `switch_model.png` / `pc_model.png` | Icono del **modelo concreto** (con esa categoria abierta) |
-| `top_toolbar.png` | Trozo distintivo de la barra **superior** (3-5 botones) |
-| `right_toolbar.png` | Trozo distintivo de la barra **vertical derecha** (2-4 botones) |
+| `search_field.png` | El campo "Search for device" tal como se ve al abrir Packet Tracer |
+| `top_toolbar.png` | Trozo distintivo de la barra de herramientas superior (3-5 botones) |
+| `right_toolbar.png` | Trozo distintivo de la barra vertical derecha (2-4 botones) |
 
-Reglas: recorte ajustado (~2 px de borde), sin cursor ni tooltip ni resaltado
-encima, PNG (no JPG), misma escala de pantalla que al calibrar/construir.
+Recorte ajustado (~2 px), sin cursor/tooltip/hover, PNG, misma escala de Windows
+que al construir. Comprueba: `python calibrate.py --list`
 
-Comprueba que estan todas:
-
-```
-python calibrate.py --list
-```
-
-### 1b. Ejecutar la calibracion
+### 1b. Ejecutar
 
 ```
-python calibrate.py                  # completa
-python calibrate.py --confidence 0.80 # baja el umbral si algo no matchea
-python calibrate.py --grayscale       # match en gris (a veces mas robusto)
-python calibrate.py --manual-models    # Fase B sin autoclic: abres tu cada categoria
-python calibrate.py --no-models        # no tocar los modelos
+python calibrate.py                        # completa
+python calibrate.py --confidence 0.80      # baja el umbral si algo no matchea
+python calibrate.py --grayscale
+python calibrate.py --manual filtered_result   # recapturar solo ese punto
+python calibrate.py --manual canvas_top_left   # forzar una esquina a mano
 ```
 
-- **Fase A** (sin mover el mouse): localiza los 3 iconos de categoria y las 2
-  anclas de barras.
-- **Fase B** (modelos): como el panel de modelos solo aparece con su categoria
-  abierta, por defecto el script **hace clic** en cada icono de categoria (con
-  cuenta regresiva de 5 s + failsafe) y luego localiza el modelo. Con
-  `--manual-models` lo abres tu y pulsas ENTER (no se mueve el mouse).
-- **Lienzo**: se calcula como el espacio entre la barra superior
-  (`top_toolbar.png`), la barra derecha (`right_toolbar.png`) y la fila de
-  iconos de categoria; el borde izquierdo es fijo. Si falta un ancla, se estima
-  por porcentaje de pantalla y se avisa.
-- Si una imagen no matchea, el resumen dice **cual** y por que; corrige ese
-  recorte y reejecuta, o captura ese punto a mano:
+- **Fase A** (sin mover el mouse): localiza las 3 imagenes. Guarda el centro de
+  `search_field`.
+- **filtered_result**: unico punto manual. El script te pide que en Packet Tracer
+  hagas clic en el buscador, escribas un modelo (ej. `4331`), y cuando aparezca el
+  icono unico lleves el mouse a su centro y pulses **ESPACIO**. Solo se pide si
+  falta (o con `--recapture-result` / `--manual filtered_result`).
+- **Lienzo**: borde superior = base de `top_toolbar.png`; borde derecho = lado
+  izquierdo de `right_toolbar.png`; borde inferior = parte superior de
+  `search_field.png`; borde izquierdo = fijo. Si falta un ancla, se estima por
+  porcentaje de pantalla y se avisa.
+- `coords.json` se escribe de forma atomica y se verifica en disco.
+
+## 2. Catalogo de modelos
+
+[device_catalog.json](device_catalog.json) — editable por ti:
+
+```jsonc
+{
+  "defaults":    { "routers": "4331", "switches": "2960", "end_devices": "PC" },
+  "routers":     ["1841", "1941", "2811", ...],
+  "switches":    ["2950T", "2960", "3560", ...],
+  "end_devices": ["PC", "Laptop", "Tablet", "Server", "Smartphone"]
+}
+```
+
+Los nombres deben ser **exactos tal como los busca tu Packet Tracer** (la busqueda
+no distingue mayusculas). Ver el catalogo actual: `python build.py --list-models`
+
+## 3. Construccion
 
 ```
-python calibrate.py --manual canvas:top_left
-python calibrate.py --manual categories:router
-```
-
-- Salida: `coords.json` (mismo formato que antes; `build.py` no cambia). Se
-  escribe de forma atomica y se verifica en disco.
-
-## 2. Construccion
-
-```
-python build.py "4 routers, 4 switches, 8 PCs"
+python build.py "4 routers, 4 switches, 8 PCs" --dry-run
+python build.py "3 routers modelo 4331, 2 switches modelo 2960, 5 PC, 1 tablet"
 python build.py --file topologia.txt
-python build.py "2 routers, 3 switches, 12 pcs" --dry-run
 ```
 
-Opciones:
+### Sintaxis de topologia
+
+Clausulas separadas por comas o saltos de linea: `<n> <tipo> [modelo <M>]`
+
+- `<tipo>`: `router(s)`, `switch(es)`, `pc(s)`, `laptop`, `tablet`, `server`,
+  `smartphone`, `end device(s)`, `host`, `computer`.
+- `modelo <M>`: opcional. Sin el se usa el default del catalogo. `pc`, `tablet`,
+  etc. ya implican su modelo. Tambien vale token suelto al final (`3 routers 4331`).
+- Se valida contra el catalogo; si el modelo no existe, aborta listando los disponibles.
+- `#` inicia comentario.
+
+Ejemplos:
+
+```
+3 routers modelo 4331
+2 switches
+5 PC
+1 tablet
+```
+
+### Opciones
 
 | Opcion | Efecto |
 |---|---|
-| `--file RUTA` | Lee la topologia desde un archivo de texto (acepta `#` como comentario) |
+| `--file RUTA` | Topologia desde archivo de texto |
+| `--catalog RUTA` | Catalogo alternativo (def. `device_catalog.json`) |
 | `--dry-run` | Calcula e imprime el plan **sin** mover el mouse |
-| `--pause SEG` | Pausa entre clics (def. `0.4`). Subela si Packet Tracer va lento |
-| `--countdown N` | Segundos de cuenta regresiva antes de empezar (def. `5`) |
+| `--list-models` | Imprime el catalogo y sale |
+| `--pause SEG` | Pausa entre clics (def. `0.4`) |
+| `--filter-delay SEG` | Espera tras escribir, antes de clicar el resultado (def. `0.4`) |
+| `--countdown N` | Cuenta regresiva antes de empezar (def. `5`) |
 
-Sintaxis de topologia: pares `<numero> <tipo>` en cualquier orden, separados por
-comas o saltos de linea. Sinonimos: `router/routers/r`, `switch/switches/sw`,
-`pc/pcs/host/computer`. Ejemplos: `4 routers, 4 switches, 8 PCs` o `4x router`.
+### Layout
 
-Layout automatico: routers en la fila de arriba, switches en la fila siguiente,
-y los PCs repartidos en columnas debajo de cada switch (o en cuadricula si no
-hay switches). Todo dentro del rectangulo `canvas.top_left` -> `canvas.bottom_right`.
+Routers en la fila de arriba, switches en la siguiente, end devices repartidos en
+columnas debajo de cada switch (o en cuadricula si no hay switches). Varios grupos
+de la misma categoria se concatenan en su fila. Todo dentro de
+`canvas.top_left` -> `canvas.bottom_right`.
 
-Secuencia por dispositivo: clic en icono de categoria -> clic en icono de modelo
--> clic en la posicion calculada del lienzo, con `--pause` entre cada clic.
-
-**Prueba siempre con `--dry-run` primero** para revisar las coordenadas antes de
-soltar el mouse.
+**Prueba siempre con `--dry-run` primero.**
 
 ### Seguridad
 
-- Cuenta regresiva de 5 s antes del primer clic (cambia el foco a Packet Tracer).
-- Failsafe de pyautogui activo: lleva el mouse a la **esquina superior izquierda
-  de la pantalla** para abortar de inmediato.
-- Pausa configurable entre cada clic.
-- Al terminar imprime un resumen de cuantos dispositivos se intentaron colocar.
+- Cuenta regresiva antes del primer clic.
+- Failsafe de pyautogui: mouse a la **esquina superior izquierda** = aborta.
+- Pausa configurable entre clics.
+- Resumen final: cuantos dispositivos se intentaron colocar por categoria.
+
+## Utilidades
+
+| Script | Para que |
+|---|---|
+| `check_dpi.py` | Verificar que las coordenadas = pixeles fisicos |
+| `test_place.py <modelo>` | Probar el flujo de 6 pasos con **un** dispositivo (`--save` guarda los puntos en `coords.json`) |
+| `test_search.py` | Prueba minima: buscar un modelo y escribir en el campo |
