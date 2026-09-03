@@ -48,6 +48,7 @@ Seguridad:
 """
 
 import argparse
+import datetime
 import json
 import math
 import os
@@ -83,6 +84,20 @@ CAT_INFO = {
     "end_device": ("end_devices", "end device"),
 }
 CAT_ORDER = ("router", "switch", "end_device")
+
+# nombre base con el que Packet Tracer nombra cada dispositivo por defecto.
+# El contador es por nombre base y arranca en 0 (Router0, Router1, Switch0, PC0...).
+# Nota: en Packet Tracer la tablet real aparece como "Tablet PC0"; aqui se usa
+# "Tablet0" por simplicidad y consistencia con el resto.
+PT_BASE_NAME = {
+    "router": "Router",
+    "switch": "Switch",
+    "PC": "PC",
+    "Laptop": "Laptop",
+    "Tablet": "Tablet",
+    "Server": "Server",
+    "Smartphone": "Smartphone",
+}
 
 # palabra en el texto -> (categoria canonica, modelo implicito o None)
 WORD_MAP = {
@@ -408,6 +423,64 @@ def print_catalog(catalog):
             print(f"    - {m}")
 
 
+def _pt_base_name(placement):
+    """Nombre base de Packet Tracer para un placement (Router, Switch, PC, ...)."""
+    if placement["category"] == "end_device":
+        return PT_BASE_NAME.get(placement["model"], placement["model"])
+    return PT_BASE_NAME[placement["category"]]
+
+
+def _record_tipo(placement):
+    """'router' / 'switch' para infra; el modelo en minusculas para end devices."""
+    if placement["category"] == "end_device":
+        return placement["model"].lower()
+    return placement["category"]
+
+
+def build_topology_record(comando_original, placements, coords, when):
+    """
+    Arma el dict que se serializa a JSON. Numera los dispositivos siguiendo la
+    convencion por defecto de Packet Tracer: contador por nombre base, desde 0.
+    'placements' ya viene en el orden en que se colocaron.
+    """
+    counters = {}
+    dispositivos = []
+    for idx, p in enumerate(placements, 1):
+        base = _pt_base_name(p)
+        n = counters.get(base, 0)
+        counters[base] = n + 1
+        dispositivos.append({
+            "id": idx,
+            "tipo": _record_tipo(p),
+            "modelo": p["model"],
+            "nombre": f"{base}{n}",
+            "posicion": [p["x"], p["y"]],
+        })
+    return {
+        "fecha": when.isoformat(timespec="seconds"),
+        "comando_original": " ".join(comando_original.split()),
+        "canvas": coords.get("canvas"),
+        "coords_json": coords,
+        "dispositivos": dispositivos,
+    }
+
+
+def save_topology_record(record, when):
+    """
+    Escribe dos archivos junto a build.py:
+      - topologia_<fecha>_<hora>.json  (historico, no se sobrescribe)
+      - topologia_actual.json          (siempre la ultima ejecucion)
+    """
+    stamp = when.strftime("%Y-%m-%d_%H-%M")
+    stamped = os.path.join(HERE, f"topologia_{stamp}.json")
+    actual = os.path.join(HERE, "topologia_actual.json")
+    for path in (stamped, actual):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    print(f"  Registro guardado: {os.path.basename(stamped)}  (+ topologia_actual.json)")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Coloca dispositivos en Packet Tracer.")
     ap.add_argument("topology", nargs="?", default=None,
@@ -514,6 +587,16 @@ def main():
         print("  Ejecucion incompleta (abortada).")
     print("  Recuerda: los cables se conectan manualmente.")
     print("=" * 72)
+
+    # Registro de la topologia resultante (solo si de verdad se coloco algo).
+    # Se guardan unicamente los dispositivos efectivamente colocados.
+    if placed_ok > 0:
+        now = datetime.datetime.now()
+        record = build_topology_record(text, placements[:placed_ok], coords, now)
+        try:
+            save_topology_record(record, now)
+        except OSError as e:  # noqa: BLE001
+            print(f"  [!] No se pudo guardar el registro de topologia: {e}")
 
 
 if __name__ == "__main__":

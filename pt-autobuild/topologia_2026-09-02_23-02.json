@@ -1,0 +1,120 @@
+{
+  "fecha": "2026-09-02T23:02:11",
+  "comando_original": "2 routers, 2 switches, 4 PC",
+  "canvas": {
+    "top_left": [
+      3,
+      189
+    ],
+    "bottom_right": [
+      800,
+      803
+    ]
+  },
+  "coords_json": {
+    "canvas": {
+      "top_left": [
+        3,
+        189
+      ],
+      "bottom_right": [
+        800,
+        803
+      ]
+    },
+    "screen_size": [
+      1920,
+      1080
+    ],
+    "filtered_result": [
+      330,
+      896
+    ],
+    "search_field": [
+      38,
+      940
+    ]
+  },
+  "dispositivos": [
+    {
+      "id": 1,
+      "tipo": "router",
+      "modelo": "4331",
+      "nombre": "Router0",
+      "posicion": [
+        202,
+        189
+      ]
+    },
+    {
+      "id": 2,
+      "tipo": "router",
+      "modelo": "4331",
+      "nombre": "Router1",
+      "posicion": [
+        601,
+        189
+      ]
+    },
+    {
+      "id": 3,
+      "tipo": "switch",
+      "modelo": "2960",
+      "nombre": "Switch0",
+      "posicion": [
+        202,
+        300
+      ]
+    },
+    {
+      "id": 4,
+      "tipo": "switch",
+      "modelo": "2960",
+      "nombre": "Switch1",
+      "posicion": [
+        601,
+        300
+      ]
+    },
+    {
+      "id": 5,
+      "tipo": "pc",
+      "modelo": "PC",
+      "nombre": "PC0",
+      "posicion": [
+        202,
+        410
+      ]
+    },
+    {
+      "id": 6,
+      "tipo": "pc",
+      "modelo": "PC",
+      "nombre": "PC1",
+      "posicion": [
+        202,
+        465
+      ]
+    },
+    {
+      "id": 7,
+      "tipo": "pc",
+      "modelo": "PC",
+      "nombre": "PC2",
+      "posicion": [
+        601,
+        410
+      ]
+    },
+    {
+      "id": 8,
+      "tipo": "pc",
+      "modelo": "PC",
+      "nombre": "PC3",
+      "posicion": [
+        601,
+        465
+      ]
+    }
+  ]
+}
