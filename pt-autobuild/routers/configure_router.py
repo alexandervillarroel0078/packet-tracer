@@ -8,17 +8,17 @@ Alcance limitado a proposito: SOLO cambia el hostname. No hace
 'copy running-config startup-config' ni 'write memory'.
 
 Reutiliza:
-    ../test_configure_ip.py   capture_point, dpi_aware, pyautogui (logica probada)
-    ../topologia_actual.json  posicion (x,y) del router por su nombre
-    ../ip_config_coords.json  close_button  (misma ventana, mismo pixel; no se
-                              duplica aqui para evitar desincronizacion)
+    core/                       dpi_aware, coords, ptwindow, validate, topology
+    data/topology/topologia_actual.json   posicion (x,y) del router por su nombre
+    data/ip_config_coords.json  close_button  (misma ventana, mismo pixel; no se
+                                duplica aqui para evitar desincronizacion)
 
-Coordenadas propias de este flujo (routers/router_coords.json):
+Coordenadas propias de este flujo (data/router_coords.json):
     cli_tab      pestana "CLI" dentro de la ventana del dispositivo   (obligatorio)
     cli_console  punto dentro del area de texto de la consola          (opcional;
                  "skip" si al abrir CLI el foco ya cae solo en la consola)
 
-Uso:
+Uso (ejecutar desde pt-autobuild/):
     python routers/configure_router.py Router0 R01
     python routers/configure_router.py Router0 R01 --dry-run
     python routers/configure_router.py --calibrate
@@ -29,24 +29,20 @@ superior izquierda = aborta), pausa configurable entre clics/comandos.
 """
 
 import argparse
-import json
 import os
-import re
 import sys
 import time
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PARENT = os.path.dirname(HERE)
-sys.path.insert(0, PARENT)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import test_configure_ip as tci  # noqa: E402  (necesita PARENT en sys.path)
+from core import dpi_aware  # noqa: E402,F401  DEBE ir antes de pyautogui
+from core import coords as coords_io  # noqa: E402
+from core import ptwindow, validate  # noqa: E402
+from core.topology import load_topology, find_device  # noqa: E402
+from core.paths import (IP_CONFIG_COORDS_PATH, ROUTER_COORDS_PATH,  # noqa: E402
+                        TOPOLOGY_ACTUAL_PATH)
 
-pyautogui = tci.pyautogui
-dpi_aware = tci.dpi_aware
-
-ROUTER_COORDS_PATH = os.path.join(HERE, "router_coords.json")
-TOPOLOGY_PATH = os.path.join(PARENT, "topologia_actual.json")
-IP_COORDS_PATH = os.path.join(PARENT, "ip_config_coords.json")
+import pyautogui  # noqa: E402
 
 SKIP = "skip"
 
@@ -56,82 +52,15 @@ ROUTER_POINTS = [
     ("cli_console", "area de consola (Q si el foco ya cae solo)"),
 ]
 
-_HOSTNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,62}$")
-
-
-# --- coords propias -------------------------------------------------
-def load_router_coords():
-    if not os.path.exists(ROUTER_COORDS_PATH):
-        return {}
-    try:
-        with open(ROUTER_COORDS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        print("  Aviso: router_coords.json existe pero no se pudo leer; se ignora.")
-        return {}
-
-
-def save_router_coords(data):
-    data["screen_size"] = list(pyautogui.size())
-    tmp = ROUTER_COORDS_PATH + ".tmp"
-    try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(json.dumps(data, indent=2, ensure_ascii=False))
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, ROUTER_COORDS_PATH)
-    except OSError as e:
-        print(f"  ERROR al guardar router_coords.json: {type(e).__name__}: {e}")
-        try:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        except OSError:
-            pass
-        return False
-    ok = os.path.exists(ROUTER_COORDS_PATH)
-    print(f"  {'OK' if ok else 'ERROR'}: router_coords.json "
-          f"{'guardado y verificado' if ok else 'NO se escribio'}.")
-    return ok
-
 
 def get_close_button():
-    """close_button vive en ../ip_config_coords.json (fuente unica)."""
-    if not os.path.exists(IP_COORDS_PATH):
-        return None
-    try:
-        with open(IP_COORDS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f).get("close_button")
-    except (json.JSONDecodeError, OSError):
-        return None
+    """close_button vive en data/ip_config_coords.json (fuente unica)."""
+    return coords_io.load_coords(IP_CONFIG_COORDS_PATH).get("close_button")
 
 
-# --- topologia -----------------------------------------------------
-def load_topology(path):
-    if not os.path.exists(path):
-        print(f"ERROR: no existe {path}. Corre build.py primero (sin --dry-run).")
-        sys.exit(1)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"ERROR: no se pudo leer {path}: {e}")
-        sys.exit(1)
-
-
-def find_device(topology, name):
-    devs = topology.get("dispositivos", [])
-    for d in devs:
-        if str(d.get("nombre", "")).lower() == name.lower():
-            return d
-    print(f"ERROR: no hay ningun dispositivo llamado '{name}' en topologia_actual.json.")
-    print("  Disponibles:", ", ".join(d.get("nombre", "?") for d in devs))
-    sys.exit(1)
-
-
-# --- calibracion --------------------------------------------------
 def calibrate_router(data, only_missing):
     print()
-    print("  CALIBRACION de routers/router_coords.json")
+    print("  CALIBRACION de data/router_coords.json")
     print("  En Packet Tracer, haz DOBLE CLIC en un router para abrir su ventana.")
     print("  NO la muevas. Marca la pestana 'CLI'. Para 'cli_console': entra a CLI")
     print("  y, si el foco ya esta en la consola, pulsa Q para guardarlo como 'skip'.")
@@ -141,7 +70,7 @@ def calibrate_router(data, only_missing):
         if only_missing and data.get(key) is not None:
             print(f"  {key:<12} ya calibrado: {data[key]}")
             continue
-        p = tci.capture_point(label, data.get(key))
+        p = coords_io.capture_point(label, data.get(key))
         if p is None:
             if key == "cli_console":
                 data[key] = SKIP
@@ -151,15 +80,10 @@ def calibrate_router(data, only_missing):
         data[key] = p
         changed = True
     if changed:
-        save_router_coords(data)
+        coords_io.save_coords(ROUTER_COORDS_PATH, data)
     return data.get("cli_tab") is not None
 
 
-def valid_hostname(s):
-    return bool(_HOSTNAME_RE.match(s)) and not s.endswith("-")
-
-
-# --- ejecucion --------------------------------------------------
 def run_cli_sequence(hostname, cmd_pause):
     """[Enter] -> enable -> configure terminal -> hostname X -> end."""
     pyautogui.press("enter")
@@ -175,8 +99,8 @@ def main():
         description="Cambia el hostname de un router via CLI en Packet Tracer.")
     ap.add_argument("name", nargs="?", help="Nombre del router en topologia_actual.json")
     ap.add_argument("hostname", nargs="?", help="Nuevo hostname, ej. R01")
-    ap.add_argument("--topology", default=TOPOLOGY_PATH,
-                    help="Registro de topologia (def. ../topologia_actual.json).")
+    ap.add_argument("--topology", default=TOPOLOGY_ACTUAL_PATH,
+                    help="Registro de topologia (def. data/topology/topologia_actual.json).")
     ap.add_argument("--calibrate", action="store_true",
                     help="Calibrar los puntos de router y salir.")
     ap.add_argument("--recalibrate", action="store_true",
@@ -202,9 +126,9 @@ def main():
     ok, msg = dpi_aware.verify()
     print(f"  {'' if ok else '[!] '}{msg}")
     print(f"  Coords router : {ROUTER_COORDS_PATH}")
-    print(f"  close_button  : {IP_COORDS_PATH} (reutilizado)")
+    print(f"  close_button  : {IP_CONFIG_COORDS_PATH} (reutilizado)")
 
-    data = load_router_coords()
+    data = coords_io.load_coords(ROUTER_COORDS_PATH)
 
     if args.calibrate:
         done = calibrate_router(data, only_missing=False)
@@ -215,7 +139,7 @@ def main():
     if not (args.name and args.hostname):
         ap.error("Indica: NOMBRE HOSTNAME (o usa --calibrate).")
 
-    if not valid_hostname(args.hostname):
+    if not validate.valid_hostname(args.hostname):
         ap.error(f"hostname '{args.hostname}' invalido: empieza por letra, solo "
                  f"letras/digitos/guiones, sin guion final, max 63.")
 
@@ -258,7 +182,7 @@ def main():
             print("  Calibracion incompleta. Aborta.")
             sys.exit(1)
     if close_btn is None:
-        print("  ERROR: no hay 'close_button' en ip_config_coords.json.")
+        print("  ERROR: no hay 'close_button' en data/ip_config_coords.json.")
         print("  Calibralo con:  python configure_ip.py --calibrate")
         sys.exit(1)
 
@@ -275,23 +199,16 @@ def main():
     pyautogui.PAUSE = 0.0
     done = False
     try:
-        pyautogui.doubleClick(dx, dy)
-        time.sleep(args.open_delay)
-
-        pyautogui.click(*data["cli_tab"])
-        time.sleep(args.tab_delay)
+        ptwindow.open_device_window(dx, dy, args.open_delay)
+        ptwindow.click_point(data["cli_tab"], args.tab_delay)
 
         if data.get("cli_console") not in (None, SKIP):
-            pyautogui.click(*data["cli_console"])
-            time.sleep(args.pause)
+            ptwindow.click_point(data["cli_console"], args.pause)
 
         run_cli_sequence(args.hostname, args.cmd_pause)
 
-        pyautogui.click(*close_btn)
-        time.sleep(args.pause)
-
-        w, h = pyautogui.size()
-        pyautogui.moveTo(w // 2, h // 2)
+        ptwindow.close_window(close_btn, args.pause)
+        ptwindow.park_mouse()
         done = True
     except pyautogui.FailSafeException:
         print("  ABORTADO por failsafe (mouse en la esquina superior izquierda).")

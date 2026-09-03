@@ -17,7 +17,7 @@ import argparse
 import sys
 import time
 
-import dpi_aware  # noqa: F401  antes de pyautogui
+from core import dpi_aware  # noqa: F401  antes de pyautogui
 import pyautogui
 
 try:

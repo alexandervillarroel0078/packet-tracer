@@ -1,0 +1,62 @@
+{
+  "_comentario": "Ejemplo del formato que genera build.py en data/topology/. Coordenadas ficticias, no reales.",
+  "fecha": "2026-01-01T12:00:00",
+  "comando_original": "2 routers modelo 4331, 1 switch modelo 2960, 3 PC",
+  "canvas": {
+    "top_left": [0, 100],
+    "bottom_right": [1000, 700]
+  },
+  "coords_json": {
+    "canvas": {
+      "top_left": [0, 100],
+      "bottom_right": [1000, 700]
+    },
+    "screen_size": [1920, 1080],
+    "filtered_result": [300, 900],
+    "search_field": [40, 950]
+  },
+  "dispositivos": [
+    {
+      "id": 1,
+      "tipo": "router",
+      "modelo": "4331",
+      "nombre": "Router0",
+      "posicion": [250, 100]
+    },
+    {
+      "id": 2,
+      "tipo": "router",
+      "modelo": "4331",
+      "nombre": "Router1",
+      "posicion": [750, 100]
+    },
+    {
+      "id": 3,
+      "tipo": "switch",
+      "modelo": "2960",
+      "nombre": "Switch0",
+      "posicion": [500, 300]
+    },
+    {
+      "id": 4,
+      "tipo": "pc",
+      "modelo": "PC",
+      "nombre": "PC0",
+      "posicion": [400, 500]
+    },
+    {
+      "id": 5,
+      "tipo": "pc",
+      "modelo": "PC",
+      "nombre": "PC1",
+      "posicion": [500, 500]
+    },
+    {
+      "id": 6,
+      "tipo": "pc",
+      "modelo": "PC",
+      "nombre": "PC2",
+      "posicion": [600, 500]
+    }
+  ]
+}

@@ -56,7 +56,9 @@ import re
 import sys
 import time
 
-import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui (fija DPI awareness)
+from core import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui (fija DPI awareness)
+from core.paths import (CATALOG_PATH, COORDS_PATH, TOPOLOGY_ACTUAL_PATH,
+                        TOPOLOGY_HISTORY_DIR)
 
 try:
     import pyautogui
@@ -64,11 +66,6 @@ except ImportError:
     print("ERROR: falta pyautogui. Instala las dependencias con:")
     print("    pip install -r requirements.txt")
     sys.exit(1)
-
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-COORDS_PATH = os.path.join(HERE, "coords.json")
-CATALOG_PATH = os.path.join(HERE, "device_catalog.json")
 
 # --- Parametros de layout (pixeles) --------------------------------------
 MIN_DX = 55          # separacion horizontal minima recomendada entre dispositivos
@@ -230,11 +227,11 @@ def load_coords():
         if coords.get("canvas", {}).get(k) is None:
             missing.append(f"canvas.{k}")
     if missing:
-        print("ERROR: faltan coordenadas en coords.json:")
+        print(f"ERROR: faltan coordenadas en {COORDS_PATH}:")
         for mkey in missing:
             print(f"  - {mkey}")
         print("Ejecuta:  python calibrate.py")
-        print("(o para search_field/filtered_result:  python test_place.py <modelo> --save)")
+        print("(para un punto suelto:  python calibrate.py --manual <nombre>)")
         sys.exit(1)
 
     saved = coords.get("screen_size")
@@ -472,13 +469,14 @@ def save_topology_record(record, when):
       - topologia_actual.json          (siempre la ultima ejecucion)
     """
     stamp = when.strftime("%Y-%m-%d_%H-%M")
-    stamped = os.path.join(HERE, f"topologia_{stamp}.json")
-    actual = os.path.join(HERE, "topologia_actual.json")
-    for path in (stamped, actual):
+    os.makedirs(TOPOLOGY_HISTORY_DIR, exist_ok=True)
+    stamped = os.path.join(TOPOLOGY_HISTORY_DIR, f"topologia_{stamp}.json")
+    for path in (stamped, TOPOLOGY_ACTUAL_PATH):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(record, f, indent=2, ensure_ascii=False)
             f.write("\n")
-    print(f"  Registro guardado: {os.path.basename(stamped)}  (+ topologia_actual.json)")
+    print(f"  Registro guardado: data/topology/history/{os.path.basename(stamped)}")
+    print("                     data/topology/topologia_actual.json")
 
 
 def main():

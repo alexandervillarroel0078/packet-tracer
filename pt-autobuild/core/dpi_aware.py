@@ -4,7 +4,7 @@ dpi_aware.py - Marca el proceso de Python como "DPI aware" en Windows.
 IMPORTA ESTE MODULO LO PRIMERO, ANTES QUE pyautogui / pyscreeze / PIL,
 en cada script del proyecto:
 
-    import dpi_aware  # noqa: F401  (debe ir antes de pyautogui)
+    from core import dpi_aware  # noqa: F401  (debe ir antes de pyautogui)
     import pyautogui
     ...
 

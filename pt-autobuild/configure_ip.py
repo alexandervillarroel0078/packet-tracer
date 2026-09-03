@@ -4,28 +4,27 @@ configure_ip.py - Flujo COMPLETO de configuracion IP de un dispositivo.
     doble clic en el dispositivo -> Desktop -> IP Configuration -> Static
     -> escribir IPv4 / Mascara / Gateway -> cerrar la ventana
 
-Reutiliza la logica de escritura ya validada en test_configure_ip.py
-(capture_point, type_into, valid_ipish, load_coords/save_coords) y su mismo
-archivo de coordenadas, ip_config_coords.json.
+Con --skip-open asume que la ventana YA esta abierta y en 'Desktop > IP
+Configuration' (modo depuracion): solo escribe los 3 campos y no cierra.
 
 La posicion del dispositivo NO se pasa a mano: se lee de topologia_actual.json
 (el registro que genera build.py) buscando el dispositivo por su nombre.
 
-Puntos que hay que calibrar (todos con posicion fija en pantalla, porque la
-ventana emergente de Packet Tracer siempre abre en el mismo sitio mientras no
-la muevas ni cambies la resolucion):
+Puntos a calibrar (posicion fija en pantalla; la ventana emergente de Packet
+Tracer abre siempre en el mismo sitio mientras no la muevas ni cambies la
+resolucion). Todos en data/ip_config_coords.json:
 
     desktop_tab           pestana "Desktop" dentro de la ventana
-    ip_configuration_item icono/boton "IP Configuration" en el escritorio
-                          (o "skip" si al entrar a Desktop ya se ve directo)
+    ip_configuration_item icono "IP Configuration" ("skip" si aparece directo)
     static_radio          radio button "Static"
-    close_button          boton X de la ventana (esquina sup. derecha)
-    ipv4_address / subnet_mask / default_gateway   (ya calibrados antes)
+    close_button          boton X de la ventana (lo reutiliza configure_router.py)
+    ipv4_address / subnet_mask / default_gateway   campos de texto
 
 Uso:
     python configure_ip.py PC0 192.168.10.10 255.255.255.0 192.168.10.1
     python configure_ip.py PC0 ... --dry-run
-    python configure_ip.py --calibrate      # calibrar los puntos de la ventana
+    python configure_ip.py PC0 ... --skip-open   # ventana ya abierta (depurar)
+    python configure_ip.py --calibrate
     python configure_ip.py PC0 ... --recalibrate
 
 Seguridad: cuenta regresiva, failsafe de pyautogui (mouse a la esquina
@@ -33,68 +32,49 @@ superior izquierda = aborta), pausa configurable entre clics.
 """
 
 import argparse
-import os
 import sys
 import time
 
-import test_configure_ip as tci  # reutiliza dpi_aware, pyautogui, y la logica probada
+from core import dpi_aware  # noqa: F401  DEBE ir antes de pyautogui
+from core import coords as coords_io
+from core import ptwindow, validate
+from core.topology import load_topology, find_device
+from core.paths import IP_CONFIG_COORDS_PATH, TOPOLOGY_ACTUAL_PATH
 
-pyautogui = tci.pyautogui
-dpi_aware = tci.dpi_aware
+import pyautogui
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-TOPOLOGY_PATH = os.path.join(HERE, "topologia_actual.json")
+SKIP = "skip"
 
-# puntos nuevos de la ventana emergente, en el orden de calibracion
+# campos de texto, en el orden en que se escriben
+FIELDS = [
+    ("ipv4_address", "IPv4 Address"),
+    ("subnet_mask", "Subnet Mask"),
+    ("default_gateway", "Default Gateway"),
+]
+
+# puntos de navegacion de la ventana, en orden de calibracion
 WINDOW_POINTS = [
     ("desktop_tab", "pestana 'Desktop'"),
     ("ip_configuration_item", "icono 'IP Configuration' (Q si aparece directo)"),
     ("static_radio", "radio button 'Static'"),
     ("close_button", "boton X de la ventana"),
 ]
-SKIP = "skip"
+
+FIELD_POINTS = [
+    ("ipv4_address", "campo 'IPv4 Address'"),
+    ("subnet_mask", "campo 'Subnet Mask'"),
+    ("default_gateway", "campo 'Default Gateway'"),
+]
 
 
-def load_topology(path):
-    import json
-    if not os.path.exists(path):
-        print(f"ERROR: no existe {path}. Corre build.py primero (sin --dry-run).")
-        sys.exit(1)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"ERROR: no se pudo leer {path}: {e}")
-        sys.exit(1)
-
-
-def find_device(topology, name):
-    devs = topology.get("dispositivos", [])
-    for d in devs:
-        if str(d.get("nombre", "")).lower() == name.lower():
-            return d
-    print(f"ERROR: no hay ningun dispositivo llamado '{name}' en topologia_actual.json.")
-    print("  Disponibles:", ", ".join(d.get("nombre", "?") for d in devs))
-    sys.exit(1)
-
-
-def calibrate_window(data, only_missing):
-    """Captura los puntos de WINDOW_POINTS. 'skip' es un valor valido guardado."""
-    print()
-    print("  CALIBRACION de los puntos de la ventana emergente")
-    print("  1) En Packet Tracer, haz DOBLE CLIC en un dispositivo para abrir su")
-    print("     ventana de configuracion. NO la muevas de sitio.")
-    print("  2) Marca la pestana 'Desktop' y el boton X (visibles ya).")
-    print("  3) Entra a Desktop > IP Configuration a mano y marca 'Static'.")
-    print("     Para 'IP Configuration': si aparece directo al pulsar Desktop,")
-    print("     pulsa Q para guardarlo como 'skip'.")
-    print("-" * 64)
+def calibrate(data, points, only_missing):
+    """Captura una lista de (clave, etiqueta). 'skip' vale para ip_configuration_item."""
     changed = False
-    for key, label in WINDOW_POINTS:
+    for key, label in points:
         if only_missing and data.get(key) is not None:
             print(f"  {key:<22} ya calibrado: {data[key]}")
             continue
-        p = tci.capture_point(label, data.get(key))
+        p = coords_io.capture_point(label, data.get(key))
         if p is None:
             if key == "ip_configuration_item":
                 data[key] = SKIP
@@ -104,8 +84,20 @@ def calibrate_window(data, only_missing):
         data[key] = p
         changed = True
     if changed:
-        tci.save_coords(data)
-    return all(data.get(k) is not None for k, _ in WINDOW_POINTS)
+        coords_io.save_coords(IP_CONFIG_COORDS_PATH, data)
+
+
+def run_calibrate(data):
+    print()
+    print("  CALIBRACION de data/ip_config_coords.json")
+    print("  1) En Packet Tracer, DOBLE CLIC en un PC para abrir su ventana. NO la muevas.")
+    print("  2) Marca 'Desktop' y el boton X (visibles ya).")
+    print("  3) Entra a Desktop > IP Configuration (modo Static) a mano.")
+    print("     Para 'IP Configuration': si aparece directo al pulsar Desktop, pulsa Q.")
+    print("  4) Marca 'Static' y los 3 campos de texto.")
+    print("-" * 64)
+    calibrate(data, WINDOW_POINTS + FIELD_POINTS, only_missing=False)
+    return all(data.get(k) is not None for k, _ in WINDOW_POINTS + FIELD_POINTS)
 
 
 def main():
@@ -115,12 +107,15 @@ def main():
     ap.add_argument("ip", nargs="?", help="IPv4 Address")
     ap.add_argument("mask", nargs="?", help="Subnet Mask")
     ap.add_argument("gateway", nargs="?", help="Default Gateway")
-    ap.add_argument("--topology", default=TOPOLOGY_PATH,
-                    help="Registro de topologia (def. topologia_actual.json).")
+    ap.add_argument("--topology", default=TOPOLOGY_ACTUAL_PATH,
+                    help="Registro de topologia (def. data/topology/topologia_actual.json).")
     ap.add_argument("--calibrate", action="store_true",
-                    help="Calibrar los puntos de la ventana y salir.")
+                    help="Calibrar todos los puntos y salir.")
     ap.add_argument("--recalibrate", action="store_true",
-                    help="Recapturar los puntos de la ventana antes de ejecutar.")
+                    help="Recapturar todos los puntos antes de ejecutar.")
+    ap.add_argument("--skip-open", action="store_true",
+                    help="La ventana ya esta abierta en IP Configuration: solo escribe "
+                         "los 3 campos (no abre, no navega, no cierra).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Imprime el plan sin mover el mouse.")
     ap.add_argument("--pause", type=float, default=0.4,
@@ -139,22 +134,21 @@ def main():
     print(f"  DPI awareness: {dpi_aware.STATUS}")
     ok, msg = dpi_aware.verify()
     print(f"  {'' if ok else '[!] '}{msg}")
-    print(f"  Coords : {tci.COORDS_PATH}")
+    print(f"  Coords : {IP_CONFIG_COORDS_PATH}")
 
-    data = tci.load_coords()
+    data = coords_io.load_coords(IP_CONFIG_COORDS_PATH)
 
     if args.calibrate:
-        done = calibrate_window(data, only_missing=False)
+        done = run_calibrate(data)
         print("-" * 64)
-        print("  Calibracion de ventana completa." if done
-              else "  Faltan puntos de ventana por capturar.")
+        print("  Calibracion completa." if done else "  Faltan puntos por capturar.")
         return
 
     if not (args.name and args.ip and args.mask and args.gateway):
         ap.error("Indica: NOMBRE IP MASCARA GATEWAY (o usa --calibrate).")
 
     for label, val in (("IP", args.ip), ("mascara", args.mask), ("gateway", args.gateway)):
-        if not tci.valid_ipish(val):
+        if not validate.valid_ipish(val):
             ap.error(f"{label} '{val}' no parece un IPv4 valido (x.x.x.x, 0-255).")
 
     topology = load_topology(args.topology)
@@ -168,50 +162,53 @@ def main():
 
     values = {"ipv4_address": args.ip, "subnet_mask": args.mask,
               "default_gateway": args.gateway}
-    all_keys = [k for k, _ in WINDOW_POINTS] + [k for k, _ in tci.FIELDS]
+
+    if args.skip_open:
+        needed = [k for k, _ in FIELDS]
+        plan_steps = [f"escribir {lbl} {data.get(k, 'SIN CALIBRAR')} <- '{values[k]}'"
+                      for k, lbl in FIELDS]
+    else:
+        needed = [k for k, _ in WINDOW_POINTS] + [k for k, _ in FIELDS]
+        plan_steps = [
+            f"doble clic en ({dx}, {dy}); esperar {args.open_delay}s",
+            f"clic 'Desktop' {data.get('desktop_tab', 'SIN CALIBRAR')}",
+        ]
+        ipc = data.get("ip_configuration_item", "SIN CALIBRAR")
+        plan_steps.append(f"clic 'IP Configuration' {ipc}"
+                          + ("  (se salta)" if ipc == SKIP else ""))
+        plan_steps.append(f"clic 'Static' {data.get('static_radio', 'SIN CALIBRAR')}")
+        plan_steps += [f"escribir {lbl} {data.get(k, 'SIN CALIBRAR')} <- '{values[k]}'"
+                       for k, lbl in FIELDS]
+        plan_steps.append(f"clic X (cerrar) {data.get('close_button', 'SIN CALIBRAR')}")
 
     if args.dry_run:
         print()
-        print("  Plan:")
-        print(f"    1. doble clic en ({dx}, {dy})")
-        print(f"    2. esperar {args.open_delay}s")
-        print(f"    3. clic 'Desktop'        {data.get('desktop_tab', 'SIN CALIBRAR')}")
-        ipc = data.get("ip_configuration_item", "SIN CALIBRAR")
-        print(f"    4. clic 'IP Configuration' {ipc}"
-              + ("  (se salta)" if ipc == SKIP else ""))
-        print(f"    5. clic 'Static'         {data.get('static_radio', 'SIN CALIBRAR')}")
-        for i, (key, lbl) in enumerate(tci.FIELDS, start=6):
-            print(f"    {i}. clic {lbl:<16} {data.get(key, 'SIN CALIBRAR')}"
-                  f"  -> Ctrl+A+Supr -> '{values[key]}'")
-        print(f"    9. clic X (cerrar)       {data.get('close_button', 'SIN CALIBRAR')}")
+        print("  Plan:" + ("  [--skip-open]" if args.skip_open else ""))
+        for i, step in enumerate(plan_steps, 1):
+            print(f"    {i}. {step}")
         print()
         print("  DRY-RUN: no se movera el mouse.")
         print("=" * 64)
         return
 
     if args.recalibrate:
-        calibrate_window(data, only_missing=False)
+        run_calibrate(data)
 
-    missing = [k for k in all_keys if data.get(k) is None]
+    missing = [k for k in needed if data.get(k) is None]
     if missing:
-        print(f"  Faltan puntos: {', '.join(missing)}")
-        if any(k in missing for k, _ in tci.FIELDS):
-            print("  Los campos IPv4/Mascara/Gateway se calibran con:")
-            print("     python test_configure_ip.py --calibrate")
-        if any(k in missing for k, _ in WINDOW_POINTS):
-            if not calibrate_window(data, only_missing=True):
-                print("  Calibracion de ventana incompleta. Aborta.")
-                sys.exit(1)
-        missing = [k for k in all_keys if data.get(k) is None]
+        print(f"  Faltan puntos: {', '.join(missing)}. Vamos a calibrarlos.")
+        calibrate(data, WINDOW_POINTS + FIELD_POINTS, only_missing=True)
+        missing = [k for k in needed if data.get(k) is None]
         if missing:
             print(f"  Siguen faltando: {', '.join(missing)}. Aborta.")
             sys.exit(1)
 
     print()
-    print("  Plan: doble clic dispositivo -> Desktop -> IP Configuration -> Static")
-    print("        -> escribir 3 campos -> cerrar")
-    print()
-    print("  Pon el foco en Packet Tracer. La ventana del dispositivo se abrira sola.")
+    if args.skip_open:
+        print("  Plan: la ventana debe estar YA en Desktop > IP Configuration.")
+    else:
+        print("  Plan: doble clic -> Desktop -> IP Configuration -> Static -> 3 campos -> cerrar")
+    print("  Pon el foco en Packet Tracer.")
     for i in range(max(0, args.countdown), 0, -1):
         sys.stdout.write(f"\r  Empezando en {i}...   ")
         sys.stdout.flush()
@@ -223,27 +220,20 @@ def main():
     p = args.pause
     done = False
     try:
-        pyautogui.doubleClick(dx, dy)
-        time.sleep(args.open_delay)
+        if not args.skip_open:
+            ptwindow.open_device_window(dx, dy, args.open_delay)
+            ptwindow.click_point(data["desktop_tab"], args.tab_delay)
+            if data.get("ip_configuration_item") not in (None, SKIP):
+                ptwindow.click_point(data["ip_configuration_item"], args.tab_delay)
+            ptwindow.click_point(data["static_radio"], p)
 
-        pyautogui.click(*data["desktop_tab"])
-        time.sleep(args.tab_delay)
+        for key, _ in FIELDS:
+            ptwindow.type_into(data[key], values[key], p)
 
-        if data.get("ip_configuration_item") not in (None, SKIP):
-            pyautogui.click(*data["ip_configuration_item"])
-            time.sleep(args.tab_delay)
+        if not args.skip_open:
+            ptwindow.close_window(data["close_button"], p)
 
-        pyautogui.click(*data["static_radio"])
-        time.sleep(p)
-
-        for key, _ in tci.FIELDS:
-            tci.type_into(data[key], values[key], p)
-
-        pyautogui.click(*data["close_button"])
-        time.sleep(p)
-
-        w, h = pyautogui.size()
-        pyautogui.moveTo(w // 2, h // 2)
+        ptwindow.park_mouse()
         done = True
     except pyautogui.FailSafeException:
         print("  ABORTADO por failsafe (mouse en la esquina superior izquierda).")
@@ -257,9 +247,11 @@ def main():
     if done:
         print(f"  {device['nombre']}: IPv4 {args.ip} / {args.mask} / GW {args.gateway}")
         print("  Revisa en Packet Tracer:")
-        print("    - Se abrio la ventana del dispositivo correcto?")
+        print("    - Se abrio la ventana del dispositivo correcto?" if not args.skip_open
+              else "    - Se escribio en la ventana correcta?")
         print("    - Quedo en 'Static' y los 3 campos correctos?")
-        print("    - La ventana se cerro?")
+        if not args.skip_open:
+            print("    - La ventana se cerro?")
         print("  Si algo fallo, recalibra:  python configure_ip.py --calibrate")
     else:
         print("  Ejecucion abortada; nada garantizado.")

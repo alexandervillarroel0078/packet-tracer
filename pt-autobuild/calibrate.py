@@ -35,7 +35,8 @@ import os
 import sys
 import time
 
-import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui (fija DPI awareness)
+from core import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui (fija DPI awareness)
+from core.paths import COORDS_PATH, REFERENCE_IMAGES_DIR
 
 try:
     import pyautogui
@@ -49,9 +50,7 @@ except ImportError:
     msvcrt = None
 
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-COORDS_PATH = os.path.join(HERE, "coords.json")
-REFDIR = os.path.join(HERE, "reference_images")
+REFDIR = REFERENCE_IMAGES_DIR
 
 MARGIN = 10          # margen general al calcular bordes del lienzo (px)
 MARGIN_BOTTOM = 15   # margen por encima del campo de busqueda
@@ -88,6 +87,7 @@ def save(data, verbose=False):
     Devuelve True/False. No 'traga' errores: si falla, imprime el error real.
     """
     data["screen_size"] = list(pyautogui.size())
+    os.makedirs(os.path.dirname(COORDS_PATH), exist_ok=True)
     tmp = COORDS_PATH + ".tmp"
     try:
         payload = json.dumps(data, indent=2, ensure_ascii=False)

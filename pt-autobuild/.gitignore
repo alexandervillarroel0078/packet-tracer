@@ -1,2 +1,10 @@
 __pycache__/
-coords.json
+*.pyc
+
+# Datos especificos de cada maquina y artefactos generados
+# (coords.json, ip_config_coords.json, router_coords.json, topologia_*.json).
+# El formato del registro esta documentado en topologia_ejemplo.json (versionado).
+/data/
+
+# compat: coords.json suelto en la raiz de versiones antiguas
+/coords.json
