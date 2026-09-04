@@ -28,6 +28,26 @@ Sintaxis de topologia (clausulas separadas por comas o saltos de linea):
     Ejemplos: "3 routers modelo 4331"   "2 switches"   "5 PC"   "1 tablet"
               "4 routers, 4 switches, 8 PCs"   (sigue valiendo; usa defaults)
 
+Sintaxis por REDES agrupadas (compatible con pt-asistente; --file recomendado):
+    SWITCHES: Sw1, Sw2
+    ROUTERS: R01, R02
+    RED Red1: 192.168.10.0/24
+    PC1 .2          # host .2 de esa red
+    PC2             # IP autoasignada (se reserva .1 como gateway)
+    RED Red2: 192.168.20.0/24
+    PC3
+    - Cada nombre (router/switch/PC) debe ser UNICO en toda la topologia; si se
+      repite, se rechaza indicando la linea y el nombre antes de colocar nada.
+    - Layout por columnas: una por RED (switch arriba, PCs debajo); routers
+      compartidos en la fila superior.
+    - Tras colocar los dispositivos se coloca una NOTA con el CIDR de cada red
+      (reutiliza add_note.place_note).
+    - Por ultimo, configura la IP/mascara/gateway de cada PC (reutiliza
+      configure_ip.apply_ip): IP calculada por el parser, mascara de la red,
+      gateway = .1 de la red. Si una PC falla, sigue con las demas.
+    - El registro (topologia_actual.json) incluye 'notas', 'redes' y, en cada
+      PC, 'ip' / 'mascara' / 'gateway'.
+
 Opciones:
     --file RUTA        Topologia desde archivo de texto (acepta '#' de comentario).
     --catalog RUTA     Catalogo alternativo (def. device_catalog.json).
@@ -49,6 +69,7 @@ Seguridad:
 
 import argparse
 import datetime
+import ipaddress
 import json
 import math
 import os
@@ -57,8 +78,9 @@ import sys
 import time
 
 from core import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui (fija DPI awareness)
-from core.paths import (CATALOG_PATH, COORDS_PATH, TOPOLOGY_ACTUAL_PATH,
-                        TOPOLOGY_HISTORY_DIR)
+from core import coords as coords_io  # noqa: E402
+from core.paths import (CATALOG_PATH, COORDS_PATH, IP_CONFIG_COORDS_PATH,
+                        TOPOLOGY_ACTUAL_PATH, TOPOLOGY_HISTORY_DIR)
 
 try:
     import pyautogui
@@ -66,6 +88,9 @@ except ImportError:
     print("ERROR: falta pyautogui. Instala las dependencias con:")
     print("    pip install -r requirements.txt")
     sys.exit(1)
+
+import add_note      # noqa: E402  reutiliza place_note (no duplicar la logica de notas)
+import configure_ip  # noqa: E402  reutiliza apply_ip (flujo IP Configuration)
 
 # --- Parametros de layout (pixeles) --------------------------------------
 MIN_DX = 55          # separacion horizontal minima recomendada entre dispositivos
@@ -479,6 +504,473 @@ def save_topology_record(record, when):
     print("                     data/topology/topologia_actual.json")
 
 
+# ======================================================================
+#  SINTAXIS POR REDES AGRUPADAS  (compatible con la gramatica de pt-asistente)
+#
+#      SWITCHES: Sw1, Sw2
+#      ROUTERS: R01, R02
+#
+#      RED Red1: 192.168.10.0/24
+#      PC1 .2
+#      PC2 .3
+#
+#      RED Red2: 192.168.20.0/24
+#      PC4
+#      PC5
+#
+#  - Cada nombre (router/switch/PC) debe ser UNICO en toda la topologia.
+#  - Layout por columnas: una columna por RED (switch arriba, PCs debajo),
+#    routers compartidos en la fila superior.
+#  - Tras colocar los dispositivos se coloca una NOTA con el CIDR de cada red
+#    (reutiliza add_note.place_note; no se duplica esa logica).
+# ======================================================================
+
+GROUPED_KEYWORD_RE = re.compile(
+    r"^\s*(switch(?:es)?\s*:|routers?\s*:|red\s+[A-Za-z0-9_-]+\s*:)", re.I)
+NOTE_BAND = 30          # banda superior reservada para las notas de CIDR
+COL_GAP_MIN = 45        # separacion minima recomendada entre columnas de red
+
+
+def is_grouped_syntax(text):
+    """True si alguna linea empieza por SWITCHES: / ROUTERS: / RED ..."""
+    return any(GROUPED_KEYWORD_RE.match(ln) for ln in text.splitlines())
+
+
+def _end_device_model(name):
+    """Modelo de end device segun el prefijo alfabetico del nombre (PC1 -> PC)."""
+    m = re.match(r"[A-Za-z]+", name or "")
+    word = m.group(0).lower() if m else "pc"
+    _, implied = WORD_MAP.get(word, ("end_device", "PC"))
+    return implied or "PC"
+
+
+class TopologyError(ValueError):
+    """Error de sintaxis/validacion de la topologia por redes (con contexto)."""
+
+
+def parse_grouped(text):
+    """
+    Devuelve dict:
+        {"routers": [name...], "switches": [name...],
+         "redes": [{"nombre", "cidr", "network", "linea",
+                    "pcs": [{"nombre", "modelo", "ip"}...]}]}
+
+    Lanza TopologyError (con numero de linea) ante nombre duplicado global,
+    CIDR/IP invalidos, host fuera de rango o IP repetida en una red, o
+    lineas de PC fuera de un bloque RED. Valida TODO antes de devolver.
+    """
+    routers, switches, redes = [], [], []
+    declared = {}          # nombre de dispositivo -> linea donde se declaro
+    red_names = {}          # nombre de red -> linea
+    current = None          # bloque RED en curso
+
+    def claim(name, lineno):
+        prev = declared.get(name.lower())
+        if prev is not None:
+            raise TopologyError(
+                f"linea {lineno}: nombre '{name}' duplicado "
+                f"(ya declarado en la linea {prev}).")
+        declared[name.lower()] = lineno
+
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+
+        m_sw = re.match(r"(?i)switch(?:es)?\s*:\s*(.*)$", line)
+        m_rt = re.match(r"(?i)routers?\s*:\s*(.*)$", line)
+        m_red = re.match(r"(?i)red\s+([A-Za-z0-9_-]+)\s*:\s*(\S+)\s*$", line)
+
+        if m_sw or m_rt:
+            current = None
+            names = [n.strip() for n in (m_sw or m_rt).group(1).split(",") if n.strip()]
+            if not names:
+                raise TopologyError(f"linea {lineno}: '{line}' no lista ningun nombre.")
+            for n in names:
+                claim(n, lineno)
+                (switches if m_sw else routers).append(n)
+            continue
+
+        if m_red:
+            name, cidr = m_red.group(1), m_red.group(2)
+            if name.lower() in red_names:
+                raise TopologyError(
+                    f"linea {lineno}: red '{name}' duplicada "
+                    f"(ya definida en la linea {red_names[name.lower()]}).")
+            try:
+                net = ipaddress.ip_network(cidr, strict=False)
+            except ValueError as e:
+                raise TopologyError(f"linea {lineno}: CIDR invalido '{cidr}': {e}")
+            red_names[name.lower()] = lineno
+            current = {"nombre": name, "cidr": str(net), "network": net,
+                       "linea": lineno, "pcs": []}
+            redes.append(current)
+            continue
+
+        # linea suelta -> debe ser un PC dentro de un bloque RED
+        if current is None:
+            raise TopologyError(
+                f"linea {lineno}: '{line}' no esta dentro de un bloque 'RED ...:' "
+                f"y no es 'SWITCHES:' / 'ROUTERS:'.")
+
+        tokens = line.split()
+        if len(tokens) > 2:
+            raise TopologyError(
+                f"linea {lineno}: '{line}' no se entiende "
+                f"(usa 'Nombre' o 'Nombre .N' o 'Nombre A.B.C.D').")
+        pname = tokens[0]
+        claim(pname, lineno)
+        net = current["network"]
+
+        ip = None
+        if len(tokens) == 2:
+            spec = tokens[1]
+            try:
+                if spec.startswith("."):
+                    host_n = int(spec[1:])
+                    addr = net.network_address + host_n
+                else:
+                    addr = ipaddress.ip_address(spec)
+            except ValueError as e:
+                raise TopologyError(f"linea {lineno}: IP/host invalido '{spec}': {e}")
+            if addr not in net:
+                raise TopologyError(
+                    f"linea {lineno}: {addr} esta fuera de {current['cidr']}.")
+            if net.prefixlen < 31 and addr in (net.network_address,
+                                               net.broadcast_address):
+                raise TopologyError(
+                    f"linea {lineno}: {addr} es la direccion de red o de broadcast "
+                    f"de {current['cidr']}, no vale para un PC.")
+            ip = str(addr)
+            if any(pc["ip"] == ip for pc in current["pcs"]):
+                raise TopologyError(
+                    f"linea {lineno}: la IP {ip} ya se uso en la red {current['nombre']}.")
+
+        current["pcs"].append({"nombre": pname,
+                               "modelo": _end_device_model(pname),
+                               "ip": ip})
+
+    if not (routers or switches or redes):
+        raise TopologyError("no se reconocio ninguna clausula "
+                            "(SWITCHES: / ROUTERS: / RED ...).")
+
+    # autoasignacion de IPs faltantes (se reserva .1 como gateway)
+    for red in redes:
+        net = red["network"]
+        used = {pc["ip"] for pc in red["pcs"] if pc["ip"]}
+        gw = str(net.network_address + 1)
+        free = (str(h) for h in net.hosts() if str(h) not in used and str(h) != gw)
+        for pc in red["pcs"]:
+            if pc["ip"] is None:
+                pc["ip"] = next(free, None)
+                if pc["ip"] is None:
+                    raise TopologyError(
+                        f"la red {red['nombre']} ({red['cidr']}) no tiene "
+                        f"direcciones libres para todos sus PCs.")
+    return {"routers": routers, "switches": switches, "redes": redes}
+
+
+def compute_grouped_layout(parsed, coords, catalog):
+    """
+    Devuelve (placements, notes, warnings).
+        placements: [{category, model, nombre, x, y, ip?}]  en orden de colocacion
+        notes:      [{texto, red, x, y}]
+    Una columna por red (switch arriba, PCs en cuadricula debajo); routers y
+    switches sobrantes en filas superiores compartidas; notas en una banda
+    reservada encima de todo.
+    """
+    x0, y0 = coords["canvas"]["top_left"]
+    x1, y1 = coords["canvas"]["bottom_right"]
+    x0, x1 = min(x0, x1), max(x0, x1)
+    y0, y1 = min(y0, y1), max(y0, y1)
+
+    errors = []
+    router_model = resolve_model("router", None, catalog, errors) if parsed["routers"] else None
+    switch_model = resolve_model("switch", None, catalog, errors) if parsed["switches"] else None
+    if errors:
+        raise TopologyError("; ".join(errors))
+
+    routers = parsed["routers"]
+    switches = parsed["switches"]
+    redes = parsed["redes"]
+    n_net = len(redes)
+
+    usable_h = y1 - y0
+    row_gap = max(ROW_GAP_MIN, usable_h * ROW_GAP_FRAC)
+
+    warnings = []
+    placements = []
+    notes = []
+
+    cursor_y = y0
+    notes_y = round(cursor_y + 6)
+    cursor_y += NOTE_BAND
+
+    router_y = None
+    if routers:
+        router_y = round(cursor_y)
+        cursor_y += row_gap
+
+    extra_switches = switches[n_net:]
+    extra_switch_y = None
+    if extra_switches:
+        warnings.append(f"{len(extra_switches)} switch(es) sin red asignada: van en "
+                        f"una fila compartida arriba.")
+        extra_switch_y = round(cursor_y)
+        cursor_y += row_gap
+
+    switch_y = round(cursor_y)
+    cursor_y += row_gap
+    pc_y_start = round(cursor_y)
+
+    # Routers compartidos
+    for x, name in zip(spread(len(routers), x0, x1), routers):
+        placements.append({"category": "router", "model": router_model,
+                           "nombre": name, "x": clamp(round(x), x0, x1), "y": router_y})
+
+    # Switches sobrantes
+    for x, name in zip(spread(len(extra_switches), x0, x1), extra_switches):
+        placements.append({"category": "switch", "model": switch_model,
+                           "nombre": name, "x": clamp(round(x), x0, x1),
+                           "y": extra_switch_y})
+
+    if n_net and len(switches) < n_net:
+        warnings.append(f"hay {n_net} redes pero solo {len(switches)} switch(es): "
+                        f"esas columnas quedan sin switch.")
+
+    col_centers = spread(n_net, x0, x1)
+    col_w = (x1 - x0) / n_net if n_net else (x1 - x0)
+    if n_net > 1 and col_w < COL_GAP_MIN + END_DX:
+        warnings.append(f"{n_net} columnas en {x1 - x0}px (~{round(col_w)}px cada una): "
+                        f"las redes pueden tocarse.")
+
+    for i, red in enumerate(redes):
+        cx = col_centers[i]
+        red["switch_name"] = switches[i] if i < len(switches) else None
+
+        if red["switch_name"]:
+            placements.append({"category": "switch", "model": switch_model,
+                               "nombre": red["switch_name"],
+                               "x": clamp(round(cx), x0, x1), "y": switch_y})
+
+        net = red["network"]
+        mascara = str(net.netmask)
+        gateway = str(net.network_address + 1)   # .1 reservado como gateway
+
+        pcs = red["pcs"]
+        per_row = max(1, int(col_w // END_DX))
+        per_row = min(per_row, len(pcs)) or 1
+        for k, pc in enumerate(pcs):
+            ccol = k % per_row
+            crow = k // per_row
+            px = cx + (ccol - (per_row - 1) / 2) * END_DX
+            py = pc_y_start + crow * END_DY
+            placements.append({"category": "end_device", "model": pc["modelo"],
+                               "nombre": pc["nombre"], "ip": pc["ip"],
+                               "mascara": mascara, "gateway": gateway,
+                               "x": clamp(round(px), x0, x1),
+                               "y": clamp(round(py), y0, y1)})
+
+        notes.append({"texto": red["cidr"], "red": red["nombre"],
+                      "x": clamp(round(cx), x0, x1), "y": notes_y})
+
+    return placements, notes, warnings
+
+
+def build_grouped_record(text, placements, notes, redes, coords, when):
+    dispositivos = []
+    for idx, p in enumerate(placements, 1):
+        d = {"id": idx, "tipo": _record_tipo(p), "modelo": p["model"],
+             "nombre": p["nombre"], "posicion": [p["x"], p["y"]]}
+        if p.get("ip"):
+            d["ip"] = p["ip"]
+        if p.get("mascara"):
+            d["mascara"] = p["mascara"]
+        if p.get("gateway"):
+            d["gateway"] = p["gateway"]
+        dispositivos.append(d)
+    return {
+        "fecha": when.isoformat(timespec="seconds"),
+        "comando_original": " ".join(text.split()),
+        "canvas": coords.get("canvas"),
+        "coords_json": coords,
+        "dispositivos": dispositivos,
+        "notas": [{"texto": n["texto"], "red": n["red"],
+                   "posicion": [n["x"], n["y"]]} for n in notes],
+        "redes": [{"nombre": r["nombre"], "cidr": r["cidr"]} for r in redes],
+    }
+
+
+def print_grouped_plan(parsed, placements, notes, pcs_to_cfg, ip_missing,
+                       warnings, dry_run):
+    print("=" * 72)
+    print("  pt-autobuild :: PLAN DE COLOCACION (sintaxis por redes)")
+    print("=" * 72)
+    print(f"  DPI awareness: {dpi_aware.STATUS}")
+    _ok, _msg = dpi_aware.verify()
+    print(f"  {'' if _ok else '[!] '}{_msg}")
+    print("-" * 72)
+    by_name = {p["nombre"]: p for p in placements}
+    if parsed["routers"]:
+        print(f"  Routers : {', '.join(parsed['routers'])}")
+    for red in parsed["redes"]:
+        sw = red.get("switch_name") or "(sin switch)"
+        print(f"  {red['nombre']}  {red['cidr']}   switch {sw}")
+        for pc in red["pcs"]:
+            p = by_name.get(pc["nombre"], {})
+            print(f"     {pc['nombre']:<10} {(pc['ip'] or '(sin ip)'):<15} "
+                  f"-> ({p.get('x', '?')}, {p.get('y', '?')})")
+    print("-" * 72)
+    print("  1) Orden de colocacion:")
+    for idx, p in enumerate(placements, 1):
+        print(f"  {idx:>3}. {p['category']:<11} {p['model']:<12} {p['nombre']:<10} "
+              f"-> ({p['x']:>5}, {p['y']:>5})")
+    print("-" * 72)
+    print("  2) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:")
+    for n in notes:
+        print(f'     "{n["texto"]}"  -> ({n["x"]:>5}, {n["y"]:>5})   [{n["red"]}]')
+    print("-" * 72)
+    print("  3) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):")
+    if ip_missing:
+        print(f"     [!] SE OMITE: faltan puntos en data/ip_config_coords.json: "
+              f"{', '.join(ip_missing)}")
+        print("         Calibra con:  python configure_ip.py --calibrate")
+    elif not pcs_to_cfg:
+        print("     (no hay PCs con IP asignada)")
+    else:
+        for p in pcs_to_cfg:
+            print(f"     {p['nombre']:<10} IP {p['ip']:<15} mask {p['mascara']:<15} "
+                  f"gw {p['gateway']}   (doble clic en {p['x']},{p['y']})")
+    if warnings:
+        print("-" * 72)
+        for w in warnings:
+            print(f"  [!] {w}")
+    if dry_run:
+        print("-" * 72)
+        print("  DRY-RUN: no se movera el mouse ni se escribira el registro.")
+    print("=" * 72)
+
+
+def run_grouped(text, catalog, args):
+    """Camino de la sintaxis por redes. No toca el camino de la sintaxis simple."""
+    try:
+        parsed = parse_grouped(text)
+    except TopologyError as e:
+        print()
+        print("ERROR: la topologia no es valida (no se coloco nada):")
+        print(f"  - {e}")
+        sys.exit(1)
+
+    coords = load_coords()
+    try:
+        placements, notes, warnings = compute_grouped_layout(parsed, coords, catalog)
+    except TopologyError as e:
+        print()
+        print("ERROR: no se pudo resolver el layout:")
+        print(f"  - {e}")
+        sys.exit(1)
+
+    # Paso 3 (config IP): se hace tras colocar todo. Aqui solo se comprueba
+    # que ip_config_coords.json esta calibrado; si no, se omite con aviso.
+    pcs_to_cfg = [p for p in placements
+                  if p["category"] == "end_device" and p.get("ip")]
+    ip_data = coords_io.load_coords(IP_CONFIG_COORDS_PATH)
+    ip_missing = [k for k in configure_ip.REQUIRED_COORDS if ip_data.get(k) is None]
+
+    print_grouped_plan(parsed, placements, notes, pcs_to_cfg, ip_missing,
+                       warnings, args.dry_run)
+    if args.dry_run:
+        return
+
+    pyautogui.FAILSAFE = True
+    pyautogui.PAUSE = 0.0
+    countdown(max(0, args.countdown))
+
+    placed_ok = 0
+    notes_ok = 0
+    ip_ok = 0
+    ip_fail = 0
+    aborted = False
+    try:
+        for p in placements:
+            place_device(coords, p["model"], p["x"], p["y"],
+                         args.pause, args.filter_delay)
+            placed_ok += 1
+        for n in notes:
+            # focus_xy recupera el foco de la ventana entre nota y nota
+            # (tras el Escape anterior el foco sale de Packet Tracer).
+            add_note.place_note(n["texto"], n["x"], n["y"],
+                                pause=args.pause, focus_xy=(n["x"], n["y"]))
+            notes_ok += 1
+    except pyautogui.FailSafeException:
+        aborted = True
+        print("\n  ABORTADO por failsafe (mouse en la esquina superior izquierda).")
+    except KeyboardInterrupt:
+        aborted = True
+        print("\n  Interrumpido por el usuario.")
+
+    # --- Paso 3: configurar IP/mascara/gateway de cada PC ---------------
+    if not aborted and pcs_to_cfg:
+        print()
+        if ip_missing:
+            print(f"  [!] No se configuran IPs: faltan puntos calibrados "
+                  f"({', '.join(ip_missing)}).")
+            print("      Calibra con:  python configure_ip.py --calibrate")
+        else:
+            print(f"  Configurando IP de {len(pcs_to_cfg)} PC(s)...")
+            for p in pcs_to_cfg:
+                try:
+                    configure_ip.apply_ip(ip_data, p["x"], p["y"], p["ip"],
+                                          p["mascara"], p["gateway"],
+                                          pause=args.pause)
+                    ip_ok += 1
+                    print(f"    OK    {p['nombre']:<10} {p['ip']}/{p['mascara']} "
+                          f"gw {p['gateway']}")
+                except pyautogui.FailSafeException:
+                    aborted = True
+                    print("\n  ABORTADO por failsafe durante la configuracion IP.")
+                    break
+                except KeyboardInterrupt:
+                    aborted = True
+                    print("\n  Interrumpido durante la configuracion IP.")
+                    break
+                except Exception as e:  # noqa: BLE001  (una PC falla -> seguir con las demas)
+                    ip_fail += 1
+                    print(f"    FALLO {p['nombre']:<10} ({type(e).__name__}: {e})")
+
+    try:
+        w, h = pyautogui.size()
+        pyautogui.moveTo(w // 2, h // 2)
+    except Exception:  # noqa: BLE001
+        pass
+
+    print()
+    print("=" * 72)
+    print("  RESUMEN")
+    print("=" * 72)
+    print(f"  Dispositivos: {placed_ok} / {len(placements)}")
+    print(f"  Notas CIDR  : {notes_ok} / {len(notes)}")
+    if pcs_to_cfg:
+        if ip_missing:
+            print(f"  Config IP   : omitida (falta calibracion) / {len(pcs_to_cfg)} PCs")
+        else:
+            print(f"  Config IP   : {ip_ok} OK / {ip_fail} fallaron / "
+                  f"{len(pcs_to_cfg)} PCs")
+    if aborted:
+        print("  Ejecucion incompleta (abortada).")
+    print("  Recuerda: los cables se conectan manualmente.")
+    print("=" * 72)
+
+    if placed_ok > 0:
+        now = datetime.datetime.now()
+        record = build_grouped_record(
+            text, placements[:placed_ok], notes[:notes_ok], parsed["redes"], coords, now)
+        try:
+            save_topology_record(record, now)
+        except OSError as e:  # noqa: BLE001
+            print(f"  [!] No se pudo guardar el registro de topologia: {e}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Coloca dispositivos en Packet Tracer.")
     ap.add_argument("topology", nargs="?", default=None,
@@ -511,6 +1003,12 @@ def main():
         text = args.topology
     else:
         ap.error("Indica una topologia como argumento o usa --file.")
+
+    # Sintaxis por redes agrupadas (SWITCHES: / ROUTERS: / RED ...).
+    # La sintaxis simple ("2 routers, 2 switches, 4 PC") sigue igual, debajo.
+    if is_grouped_syntax(text):
+        run_grouped(text, catalog, args)
+        return
 
     groups, warnings = parse_topology(text)
     for w in warnings:

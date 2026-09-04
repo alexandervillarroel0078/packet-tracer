@@ -66,6 +66,37 @@ FIELD_POINTS = [
     ("default_gateway", "campo 'Default Gateway'"),
 ]
 
+# claves de data/ip_config_coords.json que este flujo necesita calibradas
+# ('ip_configuration_item' puede valer SKIP; basta con que no sea None).
+REQUIRED_COORDS = ("desktop_tab", "ip_configuration_item", "static_radio",
+                   "close_button", "ipv4_address", "subnet_mask", "default_gateway")
+
+
+def apply_ip(data, dx, dy, ip, mask, gateway, *, pause=0.4, open_delay=0.5,
+             tab_delay=0.4, skip_open=False):
+    """Flujo completo de IP Configuration sobre el dispositivo en (dx, dy).
+
+    Unica fuente de la secuencia: abrir ventana (doble clic) -> Desktop ->
+    IP Configuration -> Static -> escribir IPv4/Mascara/Gateway -> cerrar.
+
+    'data' es el dict de ip_config_coords.json YA cargado y validado por el
+    llamador (usa REQUIRED_COORDS). No hace cuenta regresiva; asume que el
+    llamador gestiona foco y pyautogui.FAILSAFE. Propaga FailSafeException /
+    KeyboardInterrupt. Con skip_open=True solo escribe los 3 campos.
+    """
+    values = {"ipv4_address": ip, "subnet_mask": mask, "default_gateway": gateway}
+    if not skip_open:
+        ptwindow.open_device_window(dx, dy, open_delay)
+        ptwindow.click_point(data["desktop_tab"], tab_delay)
+        if data.get("ip_configuration_item") not in (None, SKIP):
+            ptwindow.click_point(data["ip_configuration_item"], tab_delay)
+        ptwindow.click_point(data["static_radio"], pause)
+    for key, _ in FIELDS:
+        ptwindow.type_into(data[key], values[key], pause)
+    if not skip_open:
+        ptwindow.close_window(data["close_button"], pause)
+    ptwindow.park_mouse()
+
 
 def calibrate(data, points, only_missing):
     """Captura una lista de (clave, etiqueta). 'skip' vale para ip_configuration_item."""
@@ -220,20 +251,9 @@ def main():
     p = args.pause
     done = False
     try:
-        if not args.skip_open:
-            ptwindow.open_device_window(dx, dy, args.open_delay)
-            ptwindow.click_point(data["desktop_tab"], args.tab_delay)
-            if data.get("ip_configuration_item") not in (None, SKIP):
-                ptwindow.click_point(data["ip_configuration_item"], args.tab_delay)
-            ptwindow.click_point(data["static_radio"], p)
-
-        for key, _ in FIELDS:
-            ptwindow.type_into(data[key], values[key], p)
-
-        if not args.skip_open:
-            ptwindow.close_window(data["close_button"], p)
-
-        ptwindow.park_mouse()
+        apply_ip(data, dx, dy, args.ip, args.mask, args.gateway, pause=p,
+                 open_delay=args.open_delay, tab_delay=args.tab_delay,
+                 skip_open=args.skip_open)
         done = True
     except pyautogui.FailSafeException:
         print("  ABORTADO por failsafe (mouse en la esquina superior izquierda).")

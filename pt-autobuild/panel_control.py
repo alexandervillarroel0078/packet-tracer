@@ -26,6 +26,7 @@ Dependencias: las de siempre (pip install -r requirements.txt). tkinter viene
 incluido con Python en Windows, no hay que instalar nada extra.
 """
 
+import json
 import os
 import queue
 import re
@@ -144,12 +145,19 @@ class PanelControl:
         self._job_buttons = []
         self.overlay = None       # Toplevel del overlay activo (o None)
         self.overlay_kind = None  # "cal" | "topo" | None
+        self._scroll_canvases = []  # canvases con scroll interno (pestanas)
 
         root.title("pt-autobuild :: panel")
         root.attributes("-topmost", True)
+        # Tamano TOTAL fijo: cabe en 1366x768 (y de sobra en 1920x1080).
+        # El alto NO crece con el contenido: cada pestana tiene scroll propio.
+        self.WIN_W, self.WIN_H = 390, 700
+        self.TAB_H = 360   # alto fijo del area de contenido de las pestanas
+        root.geometry(f"{self.WIN_W}x{self.WIN_H}")
         root.resizable(False, False)
         try:
-            root.minsize(330, 560)
+            root.maxsize(self.WIN_W, self.WIN_H)
+            root.minsize(self.WIN_W, self.WIN_H)
         except tk.TclError:
             pass
 
@@ -167,7 +175,7 @@ class PanelControl:
         except tk.TclError:
             pass
 
-        # Barra superior: always-on-top + cuenta regresiva
+        # ===== SIEMPRE VISIBLE: barra superior (fuera de las pestanas) =====
         top = ttk.Frame(self.root)
         top.pack(fill="x", **pad)
 
@@ -190,8 +198,15 @@ class PanelControl:
         self.opacity_scale.set(100)  # arranca 100% opaco
         self.opacity_scale.pack(side="left", fill="x", expand=True)
 
-        # --- Seccion: Colocar topologia ---------------------------------
-        f1 = ttk.LabelFrame(self.root, text="Colocar topologia (build.py)")
+        # ===== PESTANAS (ttk.Notebook) - alto fijo + scroll interno =====
+        self.nb = ttk.Notebook(self.root)
+        self.nb.pack(fill="x", **pad)
+        tab_colocar = self._make_scroll_tab(self.nb, "Colocar")
+        tab_config = self._make_scroll_tab(self.nb, "Configurar")
+        tab_calib = self._make_scroll_tab(self.nb, "Calibracion")
+
+        # --- Pestana 1: Colocar topologia ------------------------------
+        f1 = ttk.LabelFrame(tab_colocar, text="Colocar topologia (build.py)")
         f1.pack(fill="x", **pad)
         ttk.Label(f1, text='Ej: "2 routers, 2 switches, 4 PC"').pack(
             anchor="w", padx=6, pady=(4, 0))
@@ -201,8 +216,8 @@ class PanelControl:
         b1.pack(anchor="e", padx=6, pady=(0, 6))
         self._job_buttons.append(b1)
 
-        # --- Seccion: Configurar IP de PC -----------------------------
-        f2 = ttk.LabelFrame(self.root, text="Configurar IP de PC (configure_ip.py)")
+        # --- Pestana 2: Configurar ------------------------------------
+        f2 = ttk.LabelFrame(tab_config, text="Configurar IP de PC (configure_ip.py)")
         f2.pack(fill="x", **pad)
         self.ip_name = self._labeled_entry(f2, "Dispositivo (ej. PC0)")
         self.ip_addr = self._labeled_entry(f2, "IP (ej. 192.168.10.10)")
@@ -212,8 +227,7 @@ class PanelControl:
         b2.pack(anchor="e", padx=6, pady=(2, 6))
         self._job_buttons.append(b2)
 
-        # --- Seccion: Configurar Router ------------------------------
-        f3 = ttk.LabelFrame(self.root,
+        f3 = ttk.LabelFrame(tab_config,
                             text="Configurar Router (routers/configure_router.py)")
         f3.pack(fill="x", **pad)
         self.rt_name = self._labeled_entry(f3, "Dispositivo (ej. Router0)")
@@ -222,8 +236,7 @@ class PanelControl:
         b3.pack(anchor="e", padx=6, pady=(2, 6))
         self._job_buttons.append(b3)
 
-        # --- Seccion: Mover dispositivo ------------------------------
-        f6 = ttk.LabelFrame(self.root, text="Mover dispositivo (move_device.py)")
+        f6 = ttk.LabelFrame(tab_config, text="Mover dispositivo (move_device.py)")
         f6.pack(fill="x", **pad)
         self.mv_name = self._labeled_entry(f6, "Dispositivo (ej. Router0)")
         self.mv_x = self._labeled_entry(f6, "Nueva X (px)")
@@ -235,11 +248,23 @@ class PanelControl:
         b6.pack(anchor="e", padx=6, pady=(2, 6))
         self._job_buttons.append(b6)
 
-        # --- Seccion: Calibracion ----------------------------------------
+        f7 = ttk.LabelFrame(tab_config, text="Agregar nota (add_note.py)")
+        f7.pack(fill="x", **pad)
+        self.note_text = self._labeled_entry(f7, 'Texto (ej. "10.0.0.0/24")')
+        self.note_x = self._labeled_entry(f7, "X (px)")
+        self.note_y = self._labeled_entry(f7, "Y (px)")
+        self.note_random = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f7, text="Aleatorio dentro del lienzo (ignora X / Y)",
+                        variable=self.note_random).pack(anchor="w", padx=6, pady=2)
+        b7 = ttk.Button(f7, text="Agregar", command=self._on_note)
+        b7.pack(anchor="e", padx=6, pady=(2, 6))
+        self._job_buttons.append(b7)
+
+        # --- Pestana 3: Calibracion ----------------------------------
         # Solo ATAJOS: lanzan los comandos existentes tal cual en una consola
         # NUEVA (la calibracion necesita teclado en una terminal real). No se
         # toca ni se copia nada de calibrate.py / configure_ip.py / configure_router.py.
-        f5 = ttk.LabelFrame(self.root, text="Calibracion (abre una consola aparte)")
+        f5 = ttk.LabelFrame(tab_calib, text="Calibracion (abre una consola aparte)")
         f5.pack(fill="x", **pad)
         for text, args in (
             ("Calibrar buscador / lienzo", ["calibrate.py"]),
@@ -266,12 +291,22 @@ class PanelControl:
             command=self._toggle_topology_overlay)
         self.topo_overlay_btn.pack(fill="x", padx=6, pady=(0, 4))
 
-        # --- Log --------------------------------------------------------
+        # recordar la ultima pestana activa entre sesiones (extra, no critico)
+        try:
+            self.nb.select(self._load_last_tab())
+        except tk.TclError:
+            pass
+        self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+        # rueda del raton -> scrollea la pestana activa bajo el puntero
+        self.root.bind_all("<MouseWheel>", self._on_mousewheel)
+
+        # ===== SIEMPRE VISIBLE: log (alto FIJO, no empuja nada) =====
         f4 = ttk.LabelFrame(self.root, text="Log")
-        f4.pack(fill="both", expand=True, **pad)
+        f4.pack(fill="x", **pad)
         logwrap = ttk.Frame(f4)
-        logwrap.pack(fill="both", expand=True, padx=6, pady=6)
-        self.log = tk.Text(logwrap, height=12, width=42, wrap="word",
+        logwrap.pack(fill="x", padx=6, pady=6)
+        self.log = tk.Text(logwrap, height=8, width=42, wrap="word",
                            state="disabled", bg="#111", fg="#d0d0d0",
                            insertbackground="#d0d0d0")
         sb = ttk.Scrollbar(logwrap, command=self.log.yview)
@@ -294,6 +329,53 @@ class PanelControl:
         var = tk.StringVar()
         ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True)
         return var
+
+    def _make_scroll_tab(self, notebook, text):
+        """Anade una pestana con alto FIJO (self.TAB_H) y scroll vertical
+        interno (Canvas + Scrollbar). Devuelve el frame donde meter el contenido.
+        """
+        page = ttk.Frame(notebook)
+        notebook.add(page, text=text)
+        cv = tk.Canvas(page, height=self.TAB_H, highlightthickness=0, bd=0)
+        vsb = ttk.Scrollbar(page, orient="vertical", command=cv.yview)
+        cv.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        cv.pack(side="left", fill="both", expand=True)
+
+        inner = ttk.Frame(cv)
+        win = cv.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind("<Configure>",
+                   lambda e: cv.configure(scrollregion=cv.bbox("all")))
+        cv.bind("<Configure>", lambda e: cv.itemconfigure(win, width=e.width))
+        self._scroll_canvases.append(cv)
+        return inner
+
+    def _on_mousewheel(self, event):
+        """Rueda del raton -> scrollea la pestana bajo el puntero (si la hay)."""
+        w = self.root.winfo_containing(event.x_root, event.y_root)
+        while w is not None:
+            if w in self._scroll_canvases:
+                w.yview_scroll(int(-event.delta / 120), "units")
+                return
+            w = getattr(w, "master", None)
+
+    # ----- persistencia de la pestana activa (extra) ----------------
+    _STATE_FILE = os.path.join(HERE, "data", "panel_state.json")
+
+    def _load_last_tab(self):
+        try:
+            with open(self._STATE_FILE, encoding="utf-8") as f:
+                return int(json.load(f).get("tab", 0))
+        except (OSError, ValueError, TypeError):
+            return 0
+
+    def _on_tab_changed(self, _evt=None):
+        try:
+            os.makedirs(os.path.dirname(self._STATE_FILE), exist_ok=True)
+            with open(self._STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump({"tab": self.nb.index("current")}, f)
+        except OSError:
+            pass
 
     # ----- helpers de la GUI -----------------------------------------
     def _toggle_topmost(self):
@@ -562,6 +644,7 @@ class PanelControl:
             import build
             import configure_ip
             import move_device
+            import add_note
             try:
                 import routers.configure_router as configure_router
             except ImportError:
@@ -586,6 +669,7 @@ class PanelControl:
             "configure_ip": configure_ip,
             "configure_router": configure_router,
             "move_device": move_device,
+            "add_note": add_note,
             "coords_io": coords_io,
             "load_topology": load_topology,
             "COORDS_PATH": COORDS_PATH,
@@ -705,6 +789,28 @@ class PanelControl:
             argv=argv,
             main_getter=lambda m: m["move_device"].main,
             precheck=self._precheck_topology,
+        )
+
+    def _on_note(self):
+        text = self.note_text.get().strip()
+        if not text:
+            self._emit("[ERROR] escribe el texto de la nota.")
+            return
+        argv = ["add_note.py", text]
+        if self.note_random.get():
+            argv.append("--random")
+        else:
+            xs, ys = self.note_x.get().strip(), self.note_y.get().strip()
+            if not (_is_int(xs) and _is_int(ys)):
+                self._emit("[ERROR] X e Y deben ser enteros, o marca 'Aleatorio'.")
+                return
+            argv += [xs, ys]
+        argv += ["--countdown", "0"]
+        self._start_job(
+            "Agregar nota",
+            argv=argv,
+            main_getter=lambda m: m["add_note"].main,
+            precheck=self._precheck_topology_optional,  # add_note no requiere calibracion propia
         )
 
     # ----- motor de ejecucion --------------------------------------
