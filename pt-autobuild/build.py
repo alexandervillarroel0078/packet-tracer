@@ -31,22 +31,52 @@ Sintaxis de topologia (clausulas separadas por comas o saltos de linea):
 Sintaxis por REDES agrupadas (compatible con pt-asistente; --file recomendado):
     SWITCHES: Sw1, Sw2
     ROUTERS: R01, R02
-    RED Red1: 192.168.10.0/24
+    RED Red1: 192.168.10.0/24 R01          # R01 es el gateway (interfaz LAN)
     PC1 .2          # host .2 de esa red
     PC2             # IP autoasignada (se reserva .1 como gateway)
-    RED Red2: 192.168.20.0/24
+    RED Red2: 192.168.20.0/24 R02 Gig0/1/0 # interfaz LAN explicita
     PC3
+    ENLACES:
+    R01 Se0/1/0 R02 Se0/2/0 10.0.0.0/30    # ROUTER1 IFAZ1 ROUTER2 IFAZ2 CIDR
     - Cada nombre (router/switch/PC) debe ser UNICO en toda la topologia; si se
       repite, se rechaza indicando la linea y el nombre antes de colocar nada.
     - Layout por columnas: una por RED (switch arriba, PCs debajo); routers
       compartidos en la fila superior.
-    - Tras colocar los dispositivos se coloca una NOTA con el CIDR de cada red
+    - Tras colocar cada dispositivo se renombra su LABEL VISUAL (el nombre
+      debajo del icono) para que coincida con el nombre declarado (ej.
+      "Router11" -> "R01"); reutiliza rename_label.rename_label. Es SOLO el
+      label del lienzo, no el hostname por CLI (eso es routers/
+      configure_router.py, aparte). Offset confirmado a mano: 38px para
+      router; switch/end_device arrancan con el mismo valor, pendiente de
+      confirmar (ver rename_label.LABEL_OFFSET_Y).
+    - Tras renombrar, se coloca una NOTA con el CIDR de cada red
       (reutiliza add_note.place_note).
+    - 'RED ...: CIDR [ROUTER [IFAZ]]': si se indica ROUTER, se calcula (SOLO
+      en memoria, no se configura nada en Packet Tracer) la IP de su interfaz
+      LAN (.1 de la red; IFAZ por defecto 'Gig0/0/0') y se coloca una nota
+      chica junto al router, ej. "Gig0/0/0 .1/24". Sin ROUTER, se omite esa
+      nota (compatible con topologias viejas).
+    - 'ENLACES:' (opcional, va despues de las RED): una linea por enlace
+      punto a punto entre dos routers ya declarados:
+          ROUTER1 IFAZ1 ROUTER2 IFAZ2 CIDR/30
+      Se calcula (solo en memoria) .1 para ROUTER1 y .2 para ROUTER2, y se
+      coloca una nota junto a cada extremo, ej. "Se0/1/0 .1/30" en ROUTER1 y
+      "Se0/2/0 .2/30" en ROUTER2. No se configura ninguna IP real. Ademas se
+      coloca una nota con el CIDR completo del enlace en el punto medio
+      entre ambos routers, ej. "10.0.0.0/30". Si 2+ enlaces comparten el
+      mismo par de routers (enlaces duplicados), sus 3 notas (2 de interfaz
+      + la del punto medio) reciben un offset perpendicular escalonado
+      (LINK_STAGGER_STEP px) para no superponerse, quedando en 'carriles'
+      paralelos a la linea entre los dos routers.
     - Por ultimo, configura la IP/mascara/gateway de cada PC (reutiliza
       configure_ip.apply_ip): IP calculada por el parser, mascara de la red,
       gateway = .1 de la red. Si una PC falla, sigue con las demas.
     - El registro (topologia_actual.json) incluye 'notas', 'redes' y, en cada
-      PC, 'ip' / 'mascara' / 'gateway'.
+      PC, 'ip' / 'mascara' / 'gateway'. Cada router con interfaces declaradas
+      (LAN y/o de enlace) incluye 'interfaces': [{nombre, ip, mascara,
+      posicion}]. Tambien incluye 'enlaces': [{r1, if1, r2, if2, cidr, ip1,
+      ip2, mascara, nota_red: {texto, posicion}}] por cada 'ENLACES:' --
+      todo esto es solo registro/memoria, no se aplica en Packet Tracer.
 
 Opciones:
     --file RUTA        Topologia desde archivo de texto (acepta '#' de comentario).
@@ -91,6 +121,7 @@ except ImportError:
 
 import add_note      # noqa: E402  reutiliza place_note (no duplicar la logica de notas)
 import configure_ip  # noqa: E402  reutiliza apply_ip (flujo IP Configuration)
+import rename_label  # noqa: E402  reutiliza rename_label (no duplicar la logica de rename)
 
 # --- Parametros de layout (pixeles) --------------------------------------
 MIN_DX = 55          # separacion horizontal minima recomendada entre dispositivos
@@ -98,6 +129,12 @@ ROW_GAP_MIN = 80     # separacion vertical minima entre filas
 ROW_GAP_FRAC = 0.18  # o esta fraccion del alto util, lo que sea mayor
 END_DX = 55          # separacion horizontal entre end devices de un grupo
 END_DY = 55          # separacion vertical entre end devices de un grupo
+
+# --- Notas de interfaz (LAN de router + enlaces punto a punto) -----------
+# Solo afectan el TEXTO/POSICION de la nota; no se configura ninguna IP real.
+DEFAULT_LAN_IFACE = "Gig0/0/0"   # interfaz LAN por defecto si 'RED ...' no la indica
+INTERFACE_NOTE_OFFSET = 25       # px de separacion entre el router y su nota de interfaz
+LINK_STAGGER_STEP = 20           # px entre enlaces duplicados (mismo par de routers)
 
 # categoria canonica -> (clave en el catalogo, etiqueta legible)
 CAT_INFO = {
@@ -280,6 +317,42 @@ def spread(n, xa, xb):
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
+
+
+def calculate_interface_position(router_pos, neighbor_pos, offset=INTERFACE_NOTE_OFFSET):
+    """
+    Punto a 'offset' px de router_pos, en direccion al vecino (neighbor_pos).
+
+    Se usa solo para separar visualmente la NOTA de una interfaz del icono
+    del router -- no es una posicion real de Packet Tracer ni mueve nada.
+    'neighbor_pos' es la posicion del otro extremo: el switch de la red para
+    una interfaz LAN, o el otro router para un enlace punto a punto.
+
+    Si router_pos == neighbor_pos (distancia 0, no deberia pasar en la
+    practica) usa (0, -1) -- arriba del router -- para no dividir por cero.
+    """
+    rx, ry = router_pos
+    nx, ny = neighbor_pos
+    dx, dy = nx - rx, ny - ry
+    dist = math.hypot(dx, dy)
+    ux, uy = (dx / dist, dy / dist) if dist else (0.0, -1.0)
+    return (round(rx + ux * offset), round(ry + uy * offset))
+
+
+def _perp_unit(dx, dy):
+    """Vector unitario perpendicular a (dx, dy) (rotado 90 grados).
+
+    Se usa para escalonar notas que colisionarian: cuando 2+ enlaces
+    conectan el mismo par de routers, sus notas (interfaz + punto medio)
+    caerian todas en el mismo punto; se las separa corriendolas de a
+    LINK_STAGGER_STEP px en esta direccion perpendicular a la linea entre
+    los dos routers, para que queden en 'carriles' paralelos.
+
+    Si (dx, dy) es el vector nulo (no deberia pasar en la practica), usa
+    (1, 0) de forma arbitraria para no dividir por cero.
+    """
+    dist = math.hypot(dx, dy)
+    return (-dy / dist, dx / dist) if dist else (1.0, 0.0)
 
 
 def compute_layout(resolved, coords):
@@ -553,16 +626,26 @@ def parse_grouped(text):
     Devuelve dict:
         {"routers": [name...], "switches": [name...],
          "redes": [{"nombre", "cidr", "network", "linea",
-                    "pcs": [{"nombre", "modelo", "ip"}...]}]}
+                    "router_lan", "iface_lan",
+                    "pcs": [{"nombre", "modelo", "ip"}...]}],
+         "enlaces": [{"r1", "if1", "r2", "if2", "cidr", "network", "linea",
+                      "ip1", "ip2", "mascara", "prefixlen"}]}
+
+    'router_lan'/'iface_lan' e 'ip1'/'ip2' de los enlaces son SOLO datos en
+    memoria para el texto de las notas de interfaz; no se configura ninguna
+    IP real en Packet Tracer (eso es responsabilidad de otro flujo, aparte).
 
     Lanza TopologyError (con numero de linea) ante nombre duplicado global,
-    CIDR/IP invalidos, host fuera de rango o IP repetida en una red, o
-    lineas de PC fuera de un bloque RED. Valida TODO antes de devolver.
+    CIDR/IP invalidos, host fuera de rango o IP repetida en una red, router
+    no declarado en un 'RED ...' o 'ENLACES:', interfaz repetida en un mismo
+    router, o lineas fuera de un bloque RED/ENLACES. Valida TODO antes de
+    devolver.
     """
-    routers, switches, redes = [], [], []
+    routers, switches, redes, enlaces = [], [], [], []
     declared = {}          # nombre de dispositivo -> linea donde se declaro
     red_names = {}          # nombre de red -> linea
     current = None          # bloque RED en curso
+    in_enlaces = False      # bloque ENLACES en curso
 
     def claim(name, lineno):
         prev = declared.get(name.lower())
@@ -579,10 +662,12 @@ def parse_grouped(text):
 
         m_sw = re.match(r"(?i)switch(?:es)?\s*:\s*(.*)$", line)
         m_rt = re.match(r"(?i)routers?\s*:\s*(.*)$", line)
-        m_red = re.match(r"(?i)red\s+([A-Za-z0-9_-]+)\s*:\s*(\S+)\s*$", line)
+        m_red = re.match(r"(?i)red\s+([A-Za-z0-9_-]+)\s*:\s*(\S+)(?:\s+(.*))?$", line)
+        m_enl = re.match(r"(?i)enlaces\s*:\s*$", line)
 
         if m_sw or m_rt:
             current = None
+            in_enlaces = False
             names = [n.strip() for n in (m_sw or m_rt).group(1).split(",") if n.strip()]
             if not names:
                 raise TopologyError(f"linea {lineno}: '{line}' no lista ningun nombre.")
@@ -592,7 +677,14 @@ def parse_grouped(text):
             continue
 
         if m_red:
-            name, cidr = m_red.group(1), m_red.group(2)
+            name, cidr, extra = m_red.group(1), m_red.group(2), m_red.group(3)
+            extra_tokens = extra.split() if extra else []
+            if len(extra_tokens) > 2:
+                raise TopologyError(
+                    f"linea {lineno}: '{line}' - despues del CIDR solo se acepta "
+                    f"'ROUTER [INTERFAZ]'.")
+            router_lan = extra_tokens[0] if extra_tokens else None
+            iface_lan = extra_tokens[1] if len(extra_tokens) > 1 else None
             if name.lower() in red_names:
                 raise TopologyError(
                     f"linea {lineno}: red '{name}' duplicada "
@@ -603,15 +695,45 @@ def parse_grouped(text):
                 raise TopologyError(f"linea {lineno}: CIDR invalido '{cidr}': {e}")
             red_names[name.lower()] = lineno
             current = {"nombre": name, "cidr": str(net), "network": net,
-                       "linea": lineno, "pcs": []}
+                       "linea": lineno, "pcs": [],
+                       "router_lan": router_lan, "iface_lan": iface_lan}
+            in_enlaces = False
             redes.append(current)
+            continue
+
+        if m_enl:
+            current = None
+            in_enlaces = True
+            continue
+
+        if in_enlaces:
+            tokens = line.split()
+            if len(tokens) != 5:
+                raise TopologyError(
+                    f"linea {lineno}: '{line}' no tiene el formato "
+                    f"'ROUTER1 IFAZ1 ROUTER2 IFAZ2 CIDR' (ej. "
+                    f"'R01 Se0/1/0 R02 Se0/2/0 10.0.0.0/30').")
+            r1, if1, r2, if2, cidr = tokens
+            if r1.lower() == r2.lower():
+                raise TopologyError(
+                    f"linea {lineno}: el enlace conecta '{r1}' consigo mismo.")
+            try:
+                net = ipaddress.ip_network(cidr, strict=False)
+            except ValueError as e:
+                raise TopologyError(f"linea {lineno}: CIDR invalido '{cidr}': {e}")
+            if net.num_addresses < 4:
+                raise TopologyError(
+                    f"linea {lineno}: '{cidr}' es demasiado chico para un enlace "
+                    f"punto a punto (usa /30 o mas grande).")
+            enlaces.append({"r1": r1, "if1": if1, "r2": r2, "if2": if2,
+                            "cidr": str(net), "network": net, "linea": lineno})
             continue
 
         # linea suelta -> debe ser un PC dentro de un bloque RED
         if current is None:
             raise TopologyError(
                 f"linea {lineno}: '{line}' no esta dentro de un bloque 'RED ...:' "
-                f"y no es 'SWITCHES:' / 'ROUTERS:'.")
+                f"ni 'ENLACES:', y no es 'SWITCHES:' / 'ROUTERS:'.")
 
         tokens = line.split()
         if len(tokens) > 2:
@@ -667,14 +789,68 @@ def parse_grouped(text):
                     raise TopologyError(
                         f"la red {red['nombre']} ({red['cidr']}) no tiene "
                         f"direcciones libres para todos sus PCs.")
-    return {"routers": routers, "switches": switches, "redes": redes}
+
+    # --- Validacion de routers/interfaces referenciados por RED y ENLACES.
+    # Solo valida y calcula datos EN MEMORIA para las notas; no configura
+    # nada en Packet Tracer.
+    router_by_lower = {r.lower(): r for r in routers}
+    iface_seen = {}  # (router.lower(), interfaz.lower()) -> linea
+
+    def claim_iface(router, iface, lineno):
+        key = (router.lower(), iface.lower())
+        prev = iface_seen.get(key)
+        if prev is not None:
+            raise TopologyError(
+                f"linea {lineno}: la interfaz '{iface}' de '{router}' ya se uso "
+                f"en la linea {prev}.")
+        iface_seen[key] = lineno
+
+    for red in redes:
+        if not red["router_lan"]:
+            continue
+        if red["router_lan"].lower() not in router_by_lower:
+            raise TopologyError(
+                f"linea {red['linea']}: el router '{red['router_lan']}' de "
+                f"'RED {red['nombre']}' no esta declarado en ROUTERS:.")
+        red["router_lan"] = router_by_lower[red["router_lan"].lower()]  # nombre canonico
+        red["iface_lan"] = red["iface_lan"] or DEFAULT_LAN_IFACE
+        claim_iface(red["router_lan"], red["iface_lan"], red["linea"])
+
+    for enl in enlaces:
+        for key in ("r1", "r2"):
+            name = enl[key]
+            if name.lower() not in router_by_lower:
+                raise TopologyError(
+                    f"linea {enl['linea']}: el router '{name}' del enlace no esta "
+                    f"declarado en ROUTERS:.")
+            enl[key] = router_by_lower[name.lower()]  # nombre canonico
+        claim_iface(enl["r1"], enl["if1"], enl["linea"])
+        claim_iface(enl["r2"], enl["if2"], enl["linea"])
+        net = enl["network"]
+        enl["ip1"] = str(net.network_address + 1)
+        enl["ip2"] = str(net.network_address + 2)
+        enl["mascara"] = str(net.netmask)
+        enl["prefixlen"] = net.prefixlen
+
+    return {"routers": routers, "switches": switches, "redes": redes,
+            "enlaces": enlaces}
 
 
 def compute_grouped_layout(parsed, coords, catalog):
     """
-    Devuelve (placements, notes, warnings).
-        placements: [{category, model, nombre, x, y, ip?}]  en orden de colocacion
-        notes:      [{texto, red, x, y}]
+    Devuelve (placements, notes, iface_notes, link_notes, warnings).
+        placements:  [{category, model, nombre, x, y, ip?}]  en orden de colocacion
+        notes:       [{texto, red, x, y}]                     notas CIDR (como antes)
+        iface_notes: [{router, nombre, ip, mascara, x, y, texto}]
+                     una por interfaz de router (LAN de una red, o de un
+                     enlace punto a punto) -- SOLO calculo/registro, no se
+                     configura ninguna IP real en Packet Tracer.
+        link_notes:  [{r1, if1, r2, if2, cidr, ip1, ip2, mascara, x, y, texto}]
+                     una por enlace punto a punto, con el CIDR completo en
+                     el punto medio entre los dos routers. Si 2+ enlaces
+                     comparten el mismo par de routers, esta lista y
+                     iface_notes reciben el MISMO offset perpendicular
+                     escalonado (ver _perp_unit) para que no colisionen.
     Una columna por red (switch arriba, PCs en cuadricula debajo); routers y
     switches sobrantes en filas superiores compartidas; notas en una banda
     reservada encima de todo.
@@ -728,6 +904,11 @@ def compute_grouped_layout(parsed, coords, catalog):
         placements.append({"category": "router", "model": router_model,
                            "nombre": name, "x": clamp(round(x), x0, x1), "y": router_y})
 
+    # Posicion final de cada router, para calcular notas de interfaz mas abajo.
+    router_xy = {p["nombre"]: (p["x"], p["y"])
+                for p in placements if p["category"] == "router"}
+    iface_notes = []
+
     # Switches sobrantes
     for x, name in zip(spread(len(extra_switches), x0, x1), extra_switches):
         placements.append({"category": "switch", "model": switch_model,
@@ -774,10 +955,96 @@ def compute_grouped_layout(parsed, coords, catalog):
         notes.append({"texto": red["cidr"], "red": red["nombre"],
                       "x": clamp(round(cx), x0, x1), "y": notes_y})
 
-    return placements, notes, warnings
+        # Nota de la interfaz LAN del router que sirve esta red (si se
+        # declaro con 'RED ...: CIDR ROUTER [IFAZ]'). Solo calculo/registro;
+        # no configura ninguna IP real.
+        if red["router_lan"]:
+            rxy = router_xy.get(red["router_lan"])
+            if rxy is None:
+                warnings.append(f"RED {red['nombre']}: el router '{red['router_lan']}' "
+                                f"no se pudo ubicar; se omite su nota de interfaz.")
+            elif not red["switch_name"]:
+                warnings.append(f"RED {red['nombre']}: no hay switch en esta columna; "
+                                f"se omite la nota de interfaz LAN de "
+                                f"'{red['router_lan']}'.")
+            else:
+                swxy = (clamp(round(cx), x0, x1), switch_y)
+                ix, iy = calculate_interface_position(rxy, swxy)
+                ix, iy = clamp(ix, x0, x1), clamp(iy, y0, y1)
+                last_octet = gateway.rsplit(".", 1)[-1]
+                iface_notes.append({
+                    "router": red["router_lan"], "nombre": red["iface_lan"],
+                    "ip": gateway, "mascara": mascara, "x": ix, "y": iy,
+                    "texto": f"{red['iface_lan']} .{last_octet}/{net.prefixlen}",
+                })
+
+    # Notas de los enlaces punto a punto ('ENLACES:'): 2 notas de interfaz
+    # (una por extremo, como antes) + 1 nota de red nueva en el punto medio
+    # con el CIDR completo. Cuando 2+ enlaces comparten el mismo par de
+    # routers (enlaces duplicados) sus notas caerian todas en el mismo
+    # punto; se agrupan por par de routers y se les aplica UN offset
+    # perpendicular escalonado por enlace, compartido entre sus 3 notas
+    # (las 2 de interfaz + la de punto medio quedan alineadas entre si).
+    # Solo calculo/registro, no se configura ninguna IP real.
+    link_notes = []
+    enlaces_by_pair = {}
+    for enl in parsed.get("enlaces", []):
+        enlaces_by_pair.setdefault(frozenset((enl["r1"], enl["r2"])), []).append(enl)
+
+    for pair, group in enlaces_by_pair.items():
+        a, b = sorted(pair)
+        pos_a, pos_b = router_xy.get(a), router_xy.get(b)
+        if pos_a is None or pos_b is None:
+            warnings.append(f"ENLACES: no se pudo ubicar '{a}' o '{b}'; "
+                            f"se omiten sus enlaces.")
+            continue
+        perp = _perp_unit(pos_b[0] - pos_a[0], pos_b[1] - pos_a[1])
+        n = len(group)
+        for idx, enl in enumerate(group):
+            # stagger = 0 automaticamente cuando n == 1 (enlace unico, sin
+            # duplicados): (0 - (1-1)/2) * STEP = 0.
+            stagger = (idx - (n - 1) / 2) * LINK_STAGGER_STEP
+            sx, sy = round(perp[0] * stagger), round(perp[1] * stagger)
+
+            pos1, pos2 = router_xy[enl["r1"]], router_xy[enl["r2"]]
+            ix1, iy1 = calculate_interface_position(pos1, pos2)
+            ix2, iy2 = calculate_interface_position(pos2, pos1)
+            ix1, iy1 = clamp(ix1 + sx, x0, x1), clamp(iy1 + sy, y0, y1)
+            ix2, iy2 = clamp(ix2 + sx, x0, x1), clamp(iy2 + sy, y0, y1)
+            last1 = enl["ip1"].rsplit(".", 1)[-1]
+            last2 = enl["ip2"].rsplit(".", 1)[-1]
+            iface_notes.append({"router": enl["r1"], "nombre": enl["if1"],
+                                "ip": enl["ip1"], "mascara": enl["mascara"],
+                                "x": ix1, "y": iy1,
+                                "texto": f"{enl['if1']} .{last1}/{enl['prefixlen']}"})
+            iface_notes.append({"router": enl["r2"], "nombre": enl["if2"],
+                                "ip": enl["ip2"], "mascara": enl["mascara"],
+                                "x": ix2, "y": iy2,
+                                "texto": f"{enl['if2']} .{last2}/{enl['prefixlen']}"})
+
+            mx = round((pos1[0] + pos2[0]) / 2) + sx
+            my = round((pos1[1] + pos2[1]) / 2) + sy
+            mx, my = clamp(mx, x0, x1), clamp(my, y0, y1)
+            link_notes.append({"r1": enl["r1"], "if1": enl["if1"],
+                               "r2": enl["r2"], "if2": enl["if2"],
+                               "cidr": enl["cidr"], "ip1": enl["ip1"],
+                               "ip2": enl["ip2"], "mascara": enl["mascara"],
+                               "x": mx, "y": my, "texto": enl["cidr"]})
+
+    return placements, notes, iface_notes, link_notes, warnings
 
 
-def build_grouped_record(text, placements, notes, redes, coords, when):
+def build_grouped_record(text, placements, notes, iface_notes, link_notes,
+                         redes, coords, when):
+    # Agrupa las notas de interfaz ya colocadas por router, para anexarlas
+    # a su entrada en 'dispositivos' (solo registro; no toca Packet Tracer).
+    ifaces_by_router = {}
+    for n in iface_notes:
+        ifaces_by_router.setdefault(n["router"], []).append({
+            "nombre": n["nombre"], "ip": n["ip"], "mascara": n["mascara"],
+            "posicion": [n["x"], n["y"]],
+        })
+
     dispositivos = []
     for idx, p in enumerate(placements, 1):
         d = {"id": idx, "tipo": _record_tipo(p), "modelo": p["model"],
@@ -788,6 +1055,8 @@ def build_grouped_record(text, placements, notes, redes, coords, when):
             d["mascara"] = p["mascara"]
         if p.get("gateway"):
             d["gateway"] = p["gateway"]
+        if p["category"] == "router" and p["nombre"] in ifaces_by_router:
+            d["interfaces"] = ifaces_by_router[p["nombre"]]
         dispositivos.append(d)
     return {
         "fecha": when.isoformat(timespec="seconds"),
@@ -798,11 +1067,16 @@ def build_grouped_record(text, placements, notes, redes, coords, when):
         "notas": [{"texto": n["texto"], "red": n["red"],
                    "posicion": [n["x"], n["y"]]} for n in notes],
         "redes": [{"nombre": r["nombre"], "cidr": r["cidr"]} for r in redes],
+        "enlaces": [{"r1": n["r1"], "if1": n["if1"], "r2": n["r2"], "if2": n["if2"],
+                    "cidr": n["cidr"], "ip1": n["ip1"], "ip2": n["ip2"],
+                    "mascara": n["mascara"],
+                    "nota_red": {"texto": n["texto"], "posicion": [n["x"], n["y"]]}}
+                   for n in link_notes],
     }
 
 
-def print_grouped_plan(parsed, placements, notes, pcs_to_cfg, ip_missing,
-                       warnings, dry_run):
+def print_grouped_plan(parsed, placements, notes, iface_notes, link_notes,
+                       pcs_to_cfg, ip_missing, warnings, dry_run):
     print("=" * 72)
     print("  pt-autobuild :: PLAN DE COLOCACION (sintaxis por redes)")
     print("=" * 72)
@@ -826,11 +1100,35 @@ def print_grouped_plan(parsed, placements, notes, pcs_to_cfg, ip_missing,
         print(f"  {idx:>3}. {p['category']:<11} {p['model']:<12} {p['nombre']:<10} "
               f"-> ({p['x']:>5}, {p['y']:>5})")
     print("-" * 72)
-    print("  2) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:")
+    print("  2) Renombrar labels (nombre debajo del icono; NO el hostname CLI)")
+    print("     [!] EXPERIMENTAL: offset confirmado a mano solo para router (38px);")
+    print("         switch/end_device usan el mismo valor de arranque, sin confirmar:")
+    for p in placements:
+        oy = rename_label.LABEL_OFFSET_Y.get(p["category"], rename_label.DEFAULT_OFFSET_Y)
+        ly = round(p["y"] + oy)
+        print(f'     {p["nombre"]:<10} {p["category"]:<11} label en '
+              f'({p["x"]:>5}, {ly:>5})  (offset {oy}px)')
+    print("-" * 72)
+    print("  3) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:")
     for n in notes:
         print(f'     "{n["texto"]}"  -> ({n["x"]:>5}, {n["y"]:>5})   [{n["red"]}]')
     print("-" * 72)
-    print("  3) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):")
+    print("  4) Notas de interfaz (LAN de router + enlaces)  [solo texto, NO configura IP]:")
+    if not iface_notes:
+        print("     (ninguna: no hay 'RED ... ROUTER' ni bloque 'ENLACES:')")
+    else:
+        for n in iface_notes:
+            print(f'     {n["router"]:<10} "{n["texto"]}"  -> ({n["x"]:>5}, {n["y"]:>5})')
+    print("-" * 72)
+    print("  5) Notas de enlace (CIDR completo, punto medio)  [solo texto, NO configura IP]:")
+    if not link_notes:
+        print("     (ninguna: no hay bloque 'ENLACES:')")
+    else:
+        for n in link_notes:
+            label = f'{n["r1"]}-{n["r2"]}'
+            print(f'     {label:<12} "{n["texto"]}"  -> ({n["x"]:>5}, {n["y"]:>5})')
+    print("-" * 72)
+    print("  6) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):")
     if ip_missing:
         print(f"     [!] SE OMITE: faltan puntos en data/ip_config_coords.json: "
               f"{', '.join(ip_missing)}")
@@ -863,22 +1161,23 @@ def run_grouped(text, catalog, args):
 
     coords = load_coords()
     try:
-        placements, notes, warnings = compute_grouped_layout(parsed, coords, catalog)
+        placements, notes, iface_notes, link_notes, warnings = compute_grouped_layout(
+            parsed, coords, catalog)
     except TopologyError as e:
         print()
         print("ERROR: no se pudo resolver el layout:")
         print(f"  - {e}")
         sys.exit(1)
 
-    # Paso 3 (config IP): se hace tras colocar todo. Aqui solo se comprueba
+    # Paso 4 (config IP): se hace tras colocar todo. Aqui solo se comprueba
     # que ip_config_coords.json esta calibrado; si no, se omite con aviso.
     pcs_to_cfg = [p for p in placements
                   if p["category"] == "end_device" and p.get("ip")]
     ip_data = coords_io.load_coords(IP_CONFIG_COORDS_PATH)
     ip_missing = [k for k in configure_ip.REQUIRED_COORDS if ip_data.get(k) is None]
 
-    print_grouped_plan(parsed, placements, notes, pcs_to_cfg, ip_missing,
-                       warnings, args.dry_run)
+    print_grouped_plan(parsed, placements, notes, iface_notes, link_notes,
+                       pcs_to_cfg, ip_missing, warnings, args.dry_run)
     if args.dry_run:
         return
 
@@ -886,8 +1185,25 @@ def run_grouped(text, catalog, args):
     pyautogui.PAUSE = 0.0
     countdown(max(0, args.countdown))
 
+    # Punto FIJO y neutro para recuperar el foco de la ventana entre nota y
+    # nota. NO se reutiliza la posicion de cada nota: si dos notas quedan
+    # cerca (p. ej. una nota de interfaz junto a la nota CIDR de su columna),
+    # el cuadro de texto de la nota anterior puede seguir abierto y tapar la
+    # coordenada de la siguiente; el clic de foco caeria DENTRO de ese
+    # cuadro en vez de en lienzo vacio, y la 'n' de la proxima nota se
+    # escribiria como caracter literal en vez de activar Place Note Mode
+    # (bug real: notas encadenadas dentro de un mismo cuadro de texto).
+    # La esquina superior izquierda + margen queda libre porque el layout
+    # arranca sus columnas con medio paso de margen (ver spread()).
+    cx0, cy0 = coords["canvas"]["top_left"]
+    cx1, cy1 = coords["canvas"]["bottom_right"]
+    note_focus_xy = (min(cx0, cx1) + 8, min(cy0, cy1) + 8)
+
     placed_ok = 0
+    renamed_ok = 0
     notes_ok = 0
+    iface_notes_ok = 0
+    link_notes_ok = 0
     ip_ok = 0
     ip_fail = 0
     aborted = False
@@ -896,12 +1212,35 @@ def run_grouped(text, catalog, args):
             place_device(coords, p["model"], p["x"], p["y"],
                          args.pause, args.filter_delay)
             placed_ok += 1
+        # Paso adicional: renombrar el label visual (no el hostname) de cada
+        # dispositivo con su nombre declarado en la topologia. EXPERIMENTAL:
+        # offset confirmado a mano solo para router; switch/end_device usan
+        # el mismo valor de arranque (ver rename_label.LABEL_OFFSET_Y).
+        for p in placements:
+            rename_label.rename_label(p["x"], p["y"], p["nombre"],
+                                      category=p["category"], pause=args.pause)
+            renamed_ok += 1
         for n in notes:
             # focus_xy recupera el foco de la ventana entre nota y nota
-            # (tras el Escape anterior el foco sale de Packet Tracer).
+            # (tras el Escape anterior el foco sale de Packet Tracer). Usa
+            # el punto neutro fijo, NO la posicion de la nota (ver comentario
+            # arriba de note_focus_xy).
             add_note.place_note(n["texto"], n["x"], n["y"],
-                                pause=args.pause, focus_xy=(n["x"], n["y"]))
+                                pause=args.pause, focus_xy=note_focus_xy)
             notes_ok += 1
+        # Paso adicional: notas de interfaz (LAN de router + enlaces). Mismo
+        # mecanismo que las notas CIDR de arriba; NO configura ninguna IP
+        # real, solo coloca el texto en el lienzo.
+        for n in iface_notes:
+            add_note.place_note(n["texto"], n["x"], n["y"],
+                                pause=args.pause, focus_xy=note_focus_xy)
+            iface_notes_ok += 1
+        # Paso adicional: notas de enlace (CIDR completo en el punto medio
+        # de cada 'ENLACES:'). Mismo mecanismo que las notas de arriba.
+        for n in link_notes:
+            add_note.place_note(n["texto"], n["x"], n["y"],
+                                pause=args.pause, focus_xy=note_focus_xy)
+            link_notes_ok += 1
     except pyautogui.FailSafeException:
         aborted = True
         print("\n  ABORTADO por failsafe (mouse en la esquina superior izquierda).")
@@ -949,7 +1288,10 @@ def run_grouped(text, catalog, args):
     print("  RESUMEN")
     print("=" * 72)
     print(f"  Dispositivos: {placed_ok} / {len(placements)}")
+    print(f"  Labels renom.: {renamed_ok} / {len(placements)}")
     print(f"  Notas CIDR  : {notes_ok} / {len(notes)}")
+    print(f"  Notas iface : {iface_notes_ok} / {len(iface_notes)}")
+    print(f"  Notas enlace: {link_notes_ok} / {len(link_notes)}")
     if pcs_to_cfg:
         if ip_missing:
             print(f"  Config IP   : omitida (falta calibracion) / {len(pcs_to_cfg)} PCs")
@@ -964,7 +1306,9 @@ def run_grouped(text, catalog, args):
     if placed_ok > 0:
         now = datetime.datetime.now()
         record = build_grouped_record(
-            text, placements[:placed_ok], notes[:notes_ok], parsed["redes"], coords, now)
+            text, placements[:placed_ok], notes[:notes_ok],
+            iface_notes[:iface_notes_ok], link_notes[:link_notes_ok],
+            parsed["redes"], coords, now)
         try:
             save_topology_record(record, now)
         except OSError as e:  # noqa: BLE001

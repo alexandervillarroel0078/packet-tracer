@@ -60,8 +60,16 @@ def place_note(text, x, y, *, pause=0.4, tool_delay=0.4, type_interval=0.03,
     focus_xy: si se pasa, se hace clic ahi ANTES de 'n' para recuperar el
     foco de la VENTANA de Packet Tracer. Hace falta al encadenar notas: tras
     el Escape de la nota anterior el foco sale de la ventana y la 'n'
-    siguiente se perderia. Pasa el propio (x, y) de la nota o el centro del
-    lienzo.
+    siguiente se perderia.
+
+    IMPORTANTE al encadenar varias notas: focus_xy debe ser un punto FIJO y
+    vacio del lienzo (ej. una esquina), NO la posicion de la propia nota (ni
+    de la nota anterior/siguiente). Si dos notas quedan cerca, el cuadro de
+    texto de la anterior puede seguir abierto y tapar esa coordenada; el
+    clic de foco caeria DENTRO de ese cuadro en vez de en lienzo vacio, y la
+    'n' se escribiria como caracter literal dentro de la nota anterior en
+    vez de activar Place Note Mode (bug real ya visto: notas encadenadas
+    dentro de un mismo cuadro de texto). Ver note_focus_xy en build.py.
 
     Asume que pyautogui.FAILSAFE lo gestiona el llamador. No hace cuenta
     regresiva. Propaga FailSafeException / KeyboardInterrupt.
