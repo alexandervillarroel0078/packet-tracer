@@ -37,7 +37,22 @@ Sintaxis por REDES agrupadas (compatible con pt-asistente; --file recomendado):
     RED Red2: 192.168.20.0/24 R02 Gig0/1/0 # interfaz LAN explicita
     PC3
     ENLACES:
-    R01 Se0/1/0 R02 Se0/2/0 10.0.0.0/30    # ROUTER1 IFAZ1 ROUTER2 IFAZ2 CIDR
+    R01 Se0/1/0 R02 10.0.0.0/30    # ROUTER1 IFAZ ROUTER2 CIDR (misma interfaz en ambos)
+
+    Formas adicionales (todo lo de arriba sigue funcionando igual):
+    - ROUTERS:/SWITCHES: agrupados por modelo (cada dispositivo puede pedir
+      un modelo distinto; sin bloque, sigue usando el default del catalogo):
+          ROUTERS:
+          4331: R01, R02
+          4321: R03, R04
+    - 'RED ' es opcional en el encabezado ('Red1: cidr' == 'RED Red1: cidr').
+    - Conector explicito, como PRIMERA linea del bloque RED (router y
+      destino ya declarados ANTES en el texto -- a diferencia del token
+      inline, este SI exige ese orden):
+          R01-Sw1     # switch: PCs de esta red van a Sw1, colgado de R01
+          R03-PC5     # directo: PC5 (unica PC de esta red) va al LAN de R03
+      No se puede combinar con el token inline ('RED ...: cidr ROUTER') en
+      la misma red -- error explicito si se repiten.
     - Cada nombre (router/switch/PC) debe ser UNICO en toda la topologia; si se
       repite, se rechaza indicando la linea y el nombre antes de colocar nada.
     - Layout por columnas: una por RED (switch arriba, PCs debajo); routers
@@ -58,10 +73,12 @@ Sintaxis por REDES agrupadas (compatible con pt-asistente; --file recomendado):
       nota (compatible con topologias viejas).
     - 'ENLACES:' (opcional, va despues de las RED): una linea por enlace
       punto a punto entre dos routers ya declarados:
-          ROUTER1 IFAZ1 ROUTER2 IFAZ2 CIDR/30
-      Se calcula (solo en memoria) .1 para ROUTER1 y .2 para ROUTER2, y se
-      coloca una nota junto a cada extremo, ej. "Se0/1/0 .1/30" en ROUTER1 y
-      "Se0/2/0 .2/30" en ROUTER2. No se configura ninguna IP real. Ademas se
+          ROUTER1 IFAZ ROUTER2 CIDR/30
+      La IFAZ se reutiliza igual en ambos routers (no se especifica dos
+      veces). Se calcula (solo en memoria) .1 para ROUTER1 y .2 para
+      ROUTER2, y se coloca una nota junto a cada extremo, ej. "Se0/1/0
+      .1/30" en ROUTER1 y "Se0/1/0 .2/30" en ROUTER2. No se configura
+      ninguna IP real. Ademas se
       coloca una nota con el CIDR completo del enlace en el punto medio
       entre ambos routers, ej. "10.0.0.0/30". Si 2+ enlaces comparten el
       mismo par de routers (enlaces duplicados), sus 3 notas (2 de interfaz
@@ -599,7 +616,8 @@ def save_topology_record(record, when):
 # ======================================================================
 
 GROUPED_KEYWORD_RE = re.compile(
-    r"^\s*(switch(?:es)?\s*:|routers?\s*:|red\s+[A-Za-z0-9_-]+\s*:)", re.I)
+    r"^\s*(switch(?:es)?\s*:|routers?\s*:|enlaces\s*:|"
+    r"(?:red\s+)?[A-Za-z0-9_-]+\s*:\s*\d{1,3}(?:\.\d{1,3}){3}/\d{1,2})", re.I)
 NOTE_BAND = 30          # banda superior reservada para las notas de CIDR
 COL_GAP_MIN = 45        # separacion minima recomendada entre columnas de red
 
@@ -621,31 +639,81 @@ class TopologyError(ValueError):
     """Error de sintaxis/validacion de la topologia por redes (con contexto)."""
 
 
+def _looks_like_cidr(s):
+    """True si 's' parsea como red IPv4/IPv6 valida (ipaddress.ip_network).
+
+    Se usa para desambiguar, dentro de un bloque 'ROUTERS:'/'SWITCHES:'
+    agrupado por modelo, una linea 'MODELO: nombre, nombre' (no es CIDR) de
+    una linea que en realidad es el encabezado de la siguiente RED (SI es
+    CIDR) y por lo tanto cierra el bloque.
+    """
+    try:
+        ipaddress.ip_network(s, strict=False)
+        return True
+    except ValueError:
+        return False
+
+
 def parse_grouped(text):
     """
     Devuelve dict:
         {"routers": [name...], "switches": [name...],
+         "router_models": {name: modelo_explicito, ...},
+         "switch_models": {name: modelo_explicito, ...},
          "redes": [{"nombre", "cidr", "network", "linea",
                     "router_lan", "iface_lan",
+                    "switch_name", "switch_explicit", "direct",
                     "pcs": [{"nombre", "modelo", "ip"}...]}],
          "enlaces": [{"r1", "if1", "r2", "if2", "cidr", "network", "linea",
                       "ip1", "ip2", "mascara", "prefixlen"}]}
 
+    'router_models'/'switch_models' solo traen entrada para los nombres con
+    modelo EXPLICITO (bloque agrupado por modelo, ver sintaxis abajo);
+    ausente = usar el default del catalogo, igual que siempre.
+
     'router_lan'/'iface_lan' e 'ip1'/'ip2' de los enlaces son SOLO datos en
     memoria para el texto de las notas de interfaz; no se configura ninguna
     IP real en Packet Tracer (eso es responsabilidad de otro flujo, aparte).
+    'switch_name'/'switch_explicit'/'direct' quedan fijados aca si la RED
+    declara un conector (ver mas abajo); si no, 'switch_explicit'=False y
+    'direct'=False, y compute_grouped_layout() asigna el switch por
+    POSICION, exactamente como antes.
 
-    Lanza TopologyError (con numero de linea) ante nombre duplicado global,
-    CIDR/IP invalidos, host fuera de rango o IP repetida en una red, router
-    no declarado en un 'RED ...' o 'ENLACES:', interfaz repetida en un mismo
-    router, o lineas fuera de un bloque RED/ENLACES. Valida TODO antes de
-    devolver.
+    Sintaxis aceptada (todo lo viejo sigue funcionando sin cambios):
+        SWITCHES: Sw1, Sw2                    # flat, modelo default (viejo)
+        ROUTERS:                              # bloque agrupado por modelo
+        4331: R01, R02
+        4321: R03, R04
+        RED Red1: 192.168.1.0/24 R01 [IFAZ]   # 'RED ' opcional; token de
+                                               # router/interfaz inline (viejo)
+        R01-Sw1                                # conector, 1ra linea del
+                                                # bloque RED: switch explicito
+        R03-PC5                                # conector: conexion directa
+                                                # (sin switch); PC5 debe ser
+                                                # la UNICA PC de esa red
+        ENLACES:
+        R01 Se0/1/0 R02 10.0.0.0/30            # misma interfaz en ambos routers
+
+    Lanza TopologyError (con numero de linea) ante: nombre duplicado global,
+    CIDR/IP invalidos, host fuera de rango o IP repetida en una red, modelo
+    no reconocido en un bloque agrupado (via resolve_model, en
+    compute_grouped_layout), router o switch de un CONECTOR no declarado
+    TODAVIA (deben ir antes en el texto -- a diferencia del token inline y
+    de 'ENLACES:', que se validan al final con orden libre), conector +
+    token inline juntos en la misma RED, conexion directa con != 1 PC o con
+    el nombre equivocado, switch reutilizado en 2 conectores, interfaz
+    repetida en un mismo router, o lineas fuera de un bloque RED/ENLACES.
+    Valida TODO antes de devolver.
     """
     routers, switches, redes, enlaces = [], [], [], []
+    router_models, switch_models = {}, {}
+    routers_lower, switches_lower = set(), set()
     declared = {}          # nombre de dispositivo -> linea donde se declaro
     red_names = {}          # nombre de red -> linea
     current = None          # bloque RED en curso
     in_enlaces = False      # bloque ENLACES en curso
+    in_router_group = False # bloque "ROUTERS:" agrupado por modelo, en curso
+    in_switch_group = False # idem para "SWITCHES:"
 
     def claim(name, lineno):
         prev = declared.get(name.lower())
@@ -655,6 +723,20 @@ def parse_grouped(text):
                 f"(ya declarado en la linea {prev}).")
         declared[name.lower()] = lineno
 
+    def add_router(name, model, lineno):
+        claim(name, lineno)
+        routers.append(name)
+        routers_lower.add(name.lower())
+        if model:
+            router_models[name] = model
+
+    def add_switch(name, model, lineno):
+        claim(name, lineno)
+        switches.append(name)
+        switches_lower.add(name.lower())
+        if model:
+            switch_models[name] = model
+
     for lineno, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
@@ -662,20 +744,60 @@ def parse_grouped(text):
 
         m_sw = re.match(r"(?i)switch(?:es)?\s*:\s*(.*)$", line)
         m_rt = re.match(r"(?i)routers?\s*:\s*(.*)$", line)
-        m_red = re.match(r"(?i)red\s+([A-Za-z0-9_-]+)\s*:\s*(\S+)(?:\s+(.*))?$", line)
-        m_enl = re.match(r"(?i)enlaces\s*:\s*$", line)
 
         if m_sw or m_rt:
             current = None
             in_enlaces = False
-            names = [n.strip() for n in (m_sw or m_rt).group(1).split(",") if n.strip()]
-            if not names:
-                raise TopologyError(f"linea {lineno}: '{line}' no lista ningun nombre.")
-            for n in names:
-                claim(n, lineno)
-                (switches if m_sw else routers).append(n)
+            rest = (m_sw or m_rt).group(1).strip()
+            if rest:
+                # FORMA VIEJA: flat, sin modelo por dispositivo (todos usan
+                # el default del catalogo, como siempre).
+                in_router_group = in_switch_group = False
+                names = [n.strip() for n in rest.split(",") if n.strip()]
+                if not names:
+                    raise TopologyError(f"linea {lineno}: '{line}' no lista ningun nombre.")
+                for n in names:
+                    if m_sw:
+                        add_switch(n, None, lineno)
+                    else:
+                        add_router(n, None, lineno)
+            else:
+                # FORMA NUEVA: bloque agrupado por modelo; las lineas
+                # siguientes son "MODELO: nombre, nombre, ...".
+                in_switch_group = bool(m_sw)
+                in_router_group = bool(m_rt)
             continue
 
+        m_enl = re.match(r"(?i)enlaces\s*:\s*$", line)
+        if m_enl:
+            current = None
+            in_router_group = in_switch_group = False
+            in_enlaces = True
+            continue
+
+        if in_router_group or in_switch_group:
+            m_grp = re.match(r"^([^\s:,]+)\s*:\s*(.+)$", line)
+            if m_grp:
+                model_tok, rest = m_grp.group(1), m_grp.group(2)
+                first_val = rest.split()[0] if rest.split() else ""
+                if not _looks_like_cidr(first_val):
+                    names = [n.strip() for n in rest.split(",") if n.strip()]
+                    if not names:
+                        raise TopologyError(
+                            f"linea {lineno}: '{line}' no lista ningun nombre "
+                            f"para el modelo '{model_tok}'.")
+                    for n in names:
+                        if in_router_group:
+                            add_router(n, model_tok, lineno)
+                        else:
+                            add_switch(n, model_tok, lineno)
+                    continue
+            # No era una linea de modelo (o el valor SI parece un CIDR): el
+            # bloque termina aca; esta linea se reinterpreta mas abajo
+            # (normalmente el encabezado de la siguiente RED).
+            in_router_group = in_switch_group = False
+
+        m_red = re.match(r"(?i)(?:red\s+)?([A-Za-z0-9_-]+)\s*:\s*(\S+)(?:\s+(.*))?$", line)
         if m_red:
             name, cidr, extra = m_red.group(1), m_red.group(2), m_red.group(3)
             extra_tokens = extra.split() if extra else []
@@ -696,24 +818,23 @@ def parse_grouped(text):
             red_names[name.lower()] = lineno
             current = {"nombre": name, "cidr": str(net), "network": net,
                        "linea": lineno, "pcs": [],
-                       "router_lan": router_lan, "iface_lan": iface_lan}
+                       "router_lan": router_lan, "iface_lan": iface_lan,
+                       "switch_name": None, "switch_explicit": False,
+                       "direct": False, "_connector_checked": False,
+                       "_pending_direct_pc": None}
             in_enlaces = False
             redes.append(current)
             continue
 
-        if m_enl:
-            current = None
-            in_enlaces = True
-            continue
-
         if in_enlaces:
             tokens = line.split()
-            if len(tokens) != 5:
+            if len(tokens) != 4:
                 raise TopologyError(
                     f"linea {lineno}: '{line}' no tiene el formato "
-                    f"'ROUTER1 IFAZ1 ROUTER2 IFAZ2 CIDR' (ej. "
-                    f"'R01 Se0/1/0 R02 Se0/2/0 10.0.0.0/30').")
-            r1, if1, r2, if2, cidr = tokens
+                    f"'ROUTER1 IFAZ ROUTER2 CIDR' (ej. "
+                    f"'R01 Se0/1/0 R02 10.0.0.0/30'; la interfaz se reutiliza "
+                    f"igual en ambos routers del enlace).")
+            r1, iface, r2, cidr = tokens
             if r1.lower() == r2.lower():
                 raise TopologyError(
                     f"linea {lineno}: el enlace conecta '{r1}' consigo mismo.")
@@ -725,15 +846,43 @@ def parse_grouped(text):
                 raise TopologyError(
                     f"linea {lineno}: '{cidr}' es demasiado chico para un enlace "
                     f"punto a punto (usa /30 o mas grande).")
-            enlaces.append({"r1": r1, "if1": if1, "r2": r2, "if2": if2,
+            # 'if1'/'if2' quedan iguales (mismo nombre de interfaz en ambos
+            # routers): el resto del pipeline (notas de interfaz, JSON,
+            # validacion de interfaz repetida) sigue igual sin cambios, ya
+            # que solo consume enl['if1']/enl['if2'] sin asumir que difieren.
+            enlaces.append({"r1": r1, "if1": iface, "r2": r2, "if2": iface,
                             "cidr": str(net), "network": net, "linea": lineno})
             continue
 
-        # linea suelta -> debe ser un PC dentro de un bloque RED
+        # linea suelta -> conector explicito (solo la 1ra del bloque RED) o PC
         if current is None:
             raise TopologyError(
                 f"linea {lineno}: '{line}' no esta dentro de un bloque 'RED ...:' "
                 f"ni 'ENLACES:', y no es 'SWITCHES:' / 'ROUTERS:'.")
+
+        if not current["_connector_checked"]:
+            current["_connector_checked"] = True
+            m_conn = re.match(r"^([^\s-]+)-(.+)$", line)
+            if m_conn:
+                conn_router, conn_dest = m_conn.group(1), m_conn.group(2)
+                if conn_router.lower() in routers_lower:
+                    if current["router_lan"]:
+                        raise TopologyError(
+                            f"linea {lineno}: la RED '{current['nombre']}' ya declara "
+                            f"el router '{current['router_lan']}' en el encabezado; "
+                            f"no se puede repetir con el conector '{line}'.")
+                    current["router_lan"] = conn_router
+                    current["iface_lan"] = current["iface_lan"] or DEFAULT_LAN_IFACE
+                    if conn_dest.lower() in switches_lower:
+                        current["switch_name"] = conn_dest
+                        current["switch_explicit"] = True
+                    else:
+                        current["direct"] = True
+                        current["_pending_direct_pc"] = conn_dest
+                    continue
+                # el token antes del guion no es un router conocido -> no es
+                # un conector (ej. una PC cuyo nombre trae un guion por
+                # coincidencia); sigue abajo como PC normal.
 
         tokens = line.split()
         if len(tokens) > 2:
@@ -790,11 +939,13 @@ def parse_grouped(text):
                         f"la red {red['nombre']} ({red['cidr']}) no tiene "
                         f"direcciones libres para todos sus PCs.")
 
-    # --- Validacion de routers/interfaces referenciados por RED y ENLACES.
-    # Solo valida y calcula datos EN MEMORIA para las notas; no configura
-    # nada en Packet Tracer.
+    # --- Validacion de routers/switches/interfaces referenciados por RED y
+    # ENLACES. Solo valida y calcula datos EN MEMORIA para las notas; no
+    # configura nada en Packet Tracer.
     router_by_lower = {r.lower(): r for r in routers}
-    iface_seen = {}  # (router.lower(), interfaz.lower()) -> linea
+    switch_by_lower = {s.lower(): s for s in switches}
+    iface_seen = {}          # (router.lower(), interfaz.lower()) -> linea
+    switch_claimed_by = {}   # switch.lower() -> nombre de la red que lo reclamo
 
     def claim_iface(router, iface, lineno):
         key = (router.lower(), iface.lower())
@@ -806,15 +957,43 @@ def parse_grouped(text):
         iface_seen[key] = lineno
 
     for red in redes:
-        if not red["router_lan"]:
-            continue
-        if red["router_lan"].lower() not in router_by_lower:
-            raise TopologyError(
-                f"linea {red['linea']}: el router '{red['router_lan']}' de "
-                f"'RED {red['nombre']}' no esta declarado en ROUTERS:.")
-        red["router_lan"] = router_by_lower[red["router_lan"].lower()]  # nombre canonico
-        red["iface_lan"] = red["iface_lan"] or DEFAULT_LAN_IFACE
-        claim_iface(red["router_lan"], red["iface_lan"], red["linea"])
+        if red["router_lan"]:
+            if red["router_lan"].lower() not in router_by_lower:
+                raise TopologyError(
+                    f"linea {red['linea']}: el router '{red['router_lan']}' de "
+                    f"'RED {red['nombre']}' no esta declarado en ROUTERS:.")
+            red["router_lan"] = router_by_lower[red["router_lan"].lower()]
+            red["iface_lan"] = red["iface_lan"] or DEFAULT_LAN_IFACE
+            claim_iface(red["router_lan"], red["iface_lan"], red["linea"])
+
+        if red["switch_explicit"]:
+            sw_canon = switch_by_lower.get(red["switch_name"].lower())
+            if sw_canon is None:
+                raise TopologyError(
+                    f"linea {red['linea']}: el switch '{red['switch_name']}' del "
+                    f"conector de 'RED {red['nombre']}' no esta declarado en "
+                    f"SWITCHES:.")
+            red["switch_name"] = sw_canon
+            prev = switch_claimed_by.get(sw_canon.lower())
+            if prev is not None and prev != red["nombre"]:
+                raise TopologyError(
+                    f"linea {red['linea']}: el switch '{sw_canon}' ya fue asignado "
+                    f"a la red '{prev}' mediante conector; no puede reutilizarse "
+                    f"en '{red['nombre']}'.")
+            switch_claimed_by[sw_canon.lower()] = red["nombre"]
+
+        if red["direct"]:
+            if len(red["pcs"]) != 1:
+                raise TopologyError(
+                    f"linea {red['linea']}: 'RED {red['nombre']}' usa conexion "
+                    f"directa (sin switch) pero tiene {len(red['pcs'])} "
+                    f"dispositivo(s); debe tener exactamente 1.")
+            pc_name = red["pcs"][0]["nombre"]
+            if pc_name.lower() != red["_pending_direct_pc"].lower():
+                raise TopologyError(
+                    f"linea {red['linea']}: el conector de 'RED {red['nombre']}' "
+                    f"nombra '{red['_pending_direct_pc']}' pero la PC declarada es "
+                    f"'{pc_name}'.")
 
     for enl in enlaces:
         for key in ("r1", "r2"):
@@ -832,8 +1011,9 @@ def parse_grouped(text):
         enl["mascara"] = str(net.netmask)
         enl["prefixlen"] = net.prefixlen
 
-    return {"routers": routers, "switches": switches, "redes": redes,
-            "enlaces": enlaces}
+    return {"routers": routers, "switches": switches,
+            "router_models": router_models, "switch_models": switch_models,
+            "redes": redes, "enlaces": enlaces}
 
 
 def compute_grouped_layout(parsed, coords, catalog):
@@ -860,16 +1040,36 @@ def compute_grouped_layout(parsed, coords, catalog):
     x0, x1 = min(x0, x1), max(x0, x1)
     y0, y1 = min(y0, y1), max(y0, y1)
 
-    errors = []
-    router_model = resolve_model("router", None, catalog, errors) if parsed["routers"] else None
-    switch_model = resolve_model("switch", None, catalog, errors) if parsed["switches"] else None
-    if errors:
-        raise TopologyError("; ".join(errors))
-
     routers = parsed["routers"]
     switches = parsed["switches"]
     redes = parsed["redes"]
     n_net = len(redes)
+
+    # Resolucion de modelo POR DISPOSITIVO (antes era una unica resolucion
+    # global para todos los routers y otra para todos los switches). Cada
+    # router/switch puede pedir su propio modelo via el bloque agrupado
+    # "MODELO: nombre, nombre" (parsed["router_models"]/["switch_models"]);
+    # si no pidio ninguno, resolve_model() cae al default del catalogo,
+    # exactamente como antes. Se cachea por modelo pedido para no repetir
+    # resolucion ni duplicar mensajes de error.
+    router_models = parsed.get("router_models", {})
+    switch_models = parsed.get("switch_models", {})
+    errors = []
+    model_cache = {}
+
+    def resolve_for(category, name, explicit_models):
+        requested = explicit_models.get(name)
+        key = (category, requested)
+        if key not in model_cache:
+            model_cache[key] = resolve_model(category, requested, catalog, errors)
+        return model_cache[key]
+
+    for name in routers:
+        resolve_for("router", name, router_models)
+    for name in switches:
+        resolve_for("switch", name, switch_models)
+    if errors:
+        raise TopologyError("; ".join(errors))
 
     usable_h = y1 - y0
     row_gap = max(ROW_GAP_MIN, usable_h * ROW_GAP_FRAC)
@@ -887,7 +1087,20 @@ def compute_grouped_layout(parsed, coords, catalog):
         router_y = round(cursor_y)
         cursor_y += row_gap
 
-    extra_switches = switches[n_net:]
+    # Switches ya reclamados por un conector explicito 'ROUTER-SWITCH'
+    # (parse_grouped) quedan fuera del reparto posicional y de los
+    # "sobrantes". Necesitan switch por posicion las redes SIN conector
+    # explicito y SIN conexion directa (conector 'ROUTER-PC').
+    claimed_switches = {r["switch_name"] for r in redes if r["switch_explicit"]}
+    needs_switch = [r for r in redes if not r["switch_explicit"] and not r["direct"]]
+    leftover_switches = [s for s in switches if s not in claimed_switches]
+    positional_switches = leftover_switches[:len(needs_switch)]
+    extra_switches = leftover_switches[len(needs_switch):]
+    if needs_switch and len(positional_switches) < len(needs_switch):
+        warnings.append(f"hay {len(needs_switch)} red(es) sin switch explicito pero "
+                        f"solo {len(positional_switches)} switch(es) libre(s): esas "
+                        f"columnas quedan sin switch.")
+
     extra_switch_y = None
     if extra_switches:
         warnings.append(f"{len(extra_switches)} switch(es) sin red asignada: van en "
@@ -901,7 +1114,8 @@ def compute_grouped_layout(parsed, coords, catalog):
 
     # Routers compartidos
     for x, name in zip(spread(len(routers), x0, x1), routers):
-        placements.append({"category": "router", "model": router_model,
+        placements.append({"category": "router",
+                           "model": resolve_for("router", name, router_models),
                            "nombre": name, "x": clamp(round(x), x0, x1), "y": router_y})
 
     # Posicion final de cada router, para calcular notas de interfaz mas abajo.
@@ -911,13 +1125,10 @@ def compute_grouped_layout(parsed, coords, catalog):
 
     # Switches sobrantes
     for x, name in zip(spread(len(extra_switches), x0, x1), extra_switches):
-        placements.append({"category": "switch", "model": switch_model,
+        placements.append({"category": "switch",
+                           "model": resolve_for("switch", name, switch_models),
                            "nombre": name, "x": clamp(round(x), x0, x1),
                            "y": extra_switch_y})
-
-    if n_net and len(switches) < n_net:
-        warnings.append(f"hay {n_net} redes pero solo {len(switches)} switch(es): "
-                        f"esas columnas quedan sin switch.")
 
     col_centers = spread(n_net, x0, x1)
     col_w = (x1 - x0) / n_net if n_net else (x1 - x0)
@@ -925,12 +1136,17 @@ def compute_grouped_layout(parsed, coords, catalog):
         warnings.append(f"{n_net} columnas en {x1 - x0}px (~{round(col_w)}px cada una): "
                         f"las redes pueden tocarse.")
 
+    positional_iter = iter(positional_switches)
     for i, red in enumerate(redes):
         cx = col_centers[i]
-        red["switch_name"] = switches[i] if i < len(switches) else None
+        if not red["switch_explicit"] and not red["direct"]:
+            red["switch_name"] = next(positional_iter, None)
+        # si switch_explicit, "switch_name" ya viene fijado y validado desde
+        # el parser; si direct, se queda en None (a proposito, sin switch).
 
         if red["switch_name"]:
-            placements.append({"category": "switch", "model": switch_model,
+            placements.append({"category": "switch",
+                               "model": resolve_for("switch", red["switch_name"], switch_models),
                                "nombre": red["switch_name"],
                                "x": clamp(round(cx), x0, x1), "y": switch_y})
 
@@ -941,35 +1157,49 @@ def compute_grouped_layout(parsed, coords, catalog):
         pcs = red["pcs"]
         per_row = max(1, int(col_w // END_DX))
         per_row = min(per_row, len(pcs)) or 1
+        direct_pc_xy = None
         for k, pc in enumerate(pcs):
             ccol = k % per_row
             crow = k // per_row
             px = cx + (ccol - (per_row - 1) / 2) * END_DX
             py = pc_y_start + crow * END_DY
+            pcx, pcy = clamp(round(px), x0, x1), clamp(round(py), y0, y1)
             placements.append({"category": "end_device", "model": pc["modelo"],
                                "nombre": pc["nombre"], "ip": pc["ip"],
                                "mascara": mascara, "gateway": gateway,
-                               "x": clamp(round(px), x0, x1),
-                               "y": clamp(round(py), y0, y1)})
+                               "x": pcx, "y": pcy})
+            if red["direct"]:
+                direct_pc_xy = (pcx, pcy)
 
         notes.append({"texto": red["cidr"], "red": red["nombre"],
                       "x": clamp(round(cx), x0, x1), "y": notes_y})
 
         # Nota de la interfaz LAN del router que sirve esta red (si se
-        # declaro con 'RED ...: CIDR ROUTER [IFAZ]'). Solo calculo/registro;
-        # no configura ninguna IP real.
+        # declaro con 'RED ...: CIDR ROUTER [IFAZ]' o con un conector
+        # 'ROUTER-...'). Solo calculo/registro; no configura ninguna IP real.
         if red["router_lan"]:
             rxy = router_xy.get(red["router_lan"])
+            neighbor = None
             if rxy is None:
                 warnings.append(f"RED {red['nombre']}: el router '{red['router_lan']}' "
                                 f"no se pudo ubicar; se omite su nota de interfaz.")
+            elif red["direct"]:
+                # Conexion directa (conector 'ROUTER-PC'): el "vecino" para
+                # orientar la nota es la PC unica de esta red, no un switch.
+                if direct_pc_xy is None:
+                    warnings.append(f"RED {red['nombre']}: conexion directa sin PC "
+                                    f"ubicada; se omite la nota de interfaz.")
+                else:
+                    neighbor = direct_pc_xy
             elif not red["switch_name"]:
                 warnings.append(f"RED {red['nombre']}: no hay switch en esta columna; "
                                 f"se omite la nota de interfaz LAN de "
                                 f"'{red['router_lan']}'.")
             else:
-                swxy = (clamp(round(cx), x0, x1), switch_y)
-                ix, iy = calculate_interface_position(rxy, swxy)
+                neighbor = (clamp(round(cx), x0, x1), switch_y)
+
+            if rxy is not None and neighbor is not None:
+                ix, iy = calculate_interface_position(rxy, neighbor)
                 ix, iy = clamp(ix, x0, x1), clamp(iy, y0, y1)
                 last_octet = gateway.rsplit(".", 1)[-1]
                 iface_notes.append({
@@ -1088,7 +1318,12 @@ def print_grouped_plan(parsed, placements, notes, iface_notes, link_notes,
     if parsed["routers"]:
         print(f"  Routers : {', '.join(parsed['routers'])}")
     for red in parsed["redes"]:
-        sw = red.get("switch_name") or "(sin switch)"
+        if red.get("switch_name"):
+            sw = red["switch_name"]
+        elif red.get("direct"):
+            sw = f"(directo a {red.get('router_lan') or '?'})"
+        else:
+            sw = "(sin switch)"
         print(f"  {red['nombre']}  {red['cidr']}   switch {sw}")
         for pc in red["pcs"]:
             p = by_name.get(pc["nombre"], {})
