@@ -210,6 +210,7 @@ def load_catalog(path):
             print(f"ERROR: el catalogo debe tener una lista no vacia en '{key}'.")
             sys.exit(1)
     cat.setdefault("defaults", {})
+    cat.setdefault("router_interfaces", {})
     return cat
 
 
@@ -370,6 +371,123 @@ def _perp_unit(dx, dy):
     """
     dist = math.hypot(dx, dy)
     return (-dy / dist, dx / dist) if dist else (1.0, 0.0)
+
+
+# --- Cableado de ENLACES (solo router-router; switch/PC quedan para otra
+# etapa) -----------------------------------------------------------------
+def compute_menu_index(model, iface_name, used_ifaces, catalog, category="router",
+                       tipo=None):
+    """
+    Indice (0-based) que ocuparia 'iface_name' en el menu de conexiones de
+    Packet Tracer para un dispositivo de este modelo, DADO el estado de ESE
+    dispositivo puntual.
+
+    Confirmado a mano: Packet Tracer SACA del menu las interfaces que ya
+    tienen un cable puesto (no las muestra deshabilitadas) -- por eso el
+    indice depende de CUANTAS y CUALES interfaces de este dispositivo ya se
+    cablearon hasta este punto del run ('used_ifaces'), no solo del modelo.
+
+    Tambien CONFIRMADO A MANO (routers): la lista se FILTRA segun el TIPO
+    DE CABLE seleccionado -- siempre aparece el mismo prefijo de consolas
+    (USB Console, Auxiliary, Console), pero despues solo se listan las
+    interfaces de datos COMPATIBLES con ese cable (ej. solo las Serial si
+    elegiste un cable serial, solo las Gigabit si elegiste copper). Por
+    eso 'catalog["router_interfaces"][model]' es un dict {tipo: [...]}, no
+    una lista plana, y hace falta pasar 'tipo' para los modelos asi.
+    'catalog["switch_interfaces"][model]' sigue siendo una lista plana
+    (solo se probo con copper hasta ahora); si algun modelo de switch
+    tambien varia por tipo, se lo puede migrar al mismo formato de dict y
+    esta funcion lo soporta igual (detecta el tipo de valor).
+
+    category: 'router' o 'switch' -- decide si se busca en
+    catalog['router_interfaces'] o catalog['switch_interfaces']. El
+    cableado automatico de ENLACES (compute_cabling_plan) solo usa
+    'router' (alcance confirmado: router-router); 'switch' esta pensado
+    para uso manual/exploratorio (ej. cable_link.py probado a mano contra
+    un switch) hasta que se decida integrar router-switch a build.py.
+
+    Se filtra sacando 'used_ifaces' de la lista completa y se busca la
+    posicion de 'iface_name' en la lista restante.
+    """
+    cat_key = "router_interfaces" if category == "router" else "switch_interfaces"
+    entry = catalog.get(cat_key, {}).get(model)
+    if entry is None:
+        raise TopologyError(
+            f"el catalogo no tiene '{cat_key}' para el modelo '{model}' "
+            f"(hace falta para calcular la posicion en el menu de conexiones).")
+    if isinstance(entry, dict):
+        if tipo is None:
+            raise TopologyError(
+                f"'{cat_key}[{model}]' depende del tipo de cable (confirmado a "
+                f"mano); falta indicar 'tipo' (ej. 'serial', 'copper').")
+        full_order = entry.get(tipo)
+        if not full_order:
+            raise TopologyError(
+                f"'{cat_key}[{model}]' no tiene datos para el tipo de cable "
+                f"'{tipo}'. Tipos disponibles: {', '.join(entry.keys())}.")
+    else:
+        full_order = entry
+    remaining = [i for i in full_order if i not in used_ifaces]
+    try:
+        return remaining.index(iface_name)
+    except ValueError:
+        raise TopologyError(
+            f"la interfaz '{iface_name}' no esta en la lista de '{model}' "
+            f"({', '.join(full_order)}) o ya esta marcada como usada.")
+
+
+def compute_cabling_plan(parsed, placements, catalog):
+    """
+    Devuelve (plan, warnings).
+        plan: [{"r1", "if1", "idx1", "r2", "if2", "idx2", "cidr", "linea"}, ...]
+              EN EL ORDEN declarado en 'ENLACES:', con el indice de menu YA
+              calculado para cada extremo.
+
+    Simula el efecto de "las interfaces cableadas desaparecen del menu"
+    acumulando, por router, que interfaces se van "gastando" a medida que
+    se procesan los enlaces en orden -- exactamente lo que pasaria en
+    Packet Tracer si se cablean en ese mismo orden.
+
+    Asume que los routers arrancan SIN NINGUNA interfaz ocupada (recien
+    colocados, nada mas los toco todavia); por eso el cableado va
+    INMEDIATAMENTE despues de colocar/renombrar, antes de cualquier nota.
+
+    Si al catalogo le falta 'router_interfaces' para el modelo de algun
+    router (dato pendiente de completar a mano mirando Packet Tracer), ESE
+    enlace puntual se OMITE del plan con un aviso -- no es fatal, no
+    bloquea colocacion/notas/IP del resto de la topologia.
+    """
+    model_by_router = {p["nombre"]: p["model"] for p in placements
+                       if p["category"] == "router"}
+    used = {}   # nombre de router -> set de interfaces ya cableadas en este run
+    plan = []
+    warnings = []
+    for enl in parsed.get("enlaces", []):
+        r1, if1, r2, if2 = enl["r1"], enl["if1"], enl["r2"], enl["if2"]
+        model1, model2 = model_by_router.get(r1), model_by_router.get(r2)
+        if model1 is None or model2 is None:
+            warnings.append(f"ENLACES linea {enl['linea']}: no se pudo ubicar el "
+                            f"modelo de '{r1}' o '{r2}'; se omite el cableado.")
+            continue
+        u1 = used.setdefault(r1, set())
+        u2 = used.setdefault(r2, set())
+        try:
+            # ENLACES: siempre son cables SERIALES (alcance confirmado:
+            # router-router). El menu de un router se filtra por tipo de
+            # cable (confirmado a mano), por eso se pasa 'tipo' aca.
+            idx1 = compute_menu_index(model1, if1, u1, catalog, tipo="serial")
+            idx2 = compute_menu_index(model2, if2, u2, catalog, tipo="serial")
+        except TopologyError as e:
+            warnings.append(f"ENLACES linea {enl['linea']}: {e} (falta completar "
+                            f"'router_interfaces' en el catalogo); se omite el "
+                            f"cableado de este enlace.")
+            continue
+        plan.append({"r1": r1, "if1": if1, "idx1": idx1,
+                    "r2": r2, "if2": if2, "idx2": idx2,
+                    "cidr": enl["cidr"], "linea": enl["linea"]})
+        u1.add(if1)
+        u2.add(if2)
+    return plan, warnings
 
 
 def compute_layout(resolved, coords):
@@ -1305,8 +1423,8 @@ def build_grouped_record(text, placements, notes, iface_notes, link_notes,
     }
 
 
-def print_grouped_plan(parsed, placements, notes, iface_notes, link_notes,
-                       pcs_to_cfg, ip_missing, warnings, dry_run):
+def print_grouped_plan(parsed, placements, cabling_plan, notes, iface_notes,
+                       link_notes, pcs_to_cfg, ip_missing, warnings, dry_run):
     print("=" * 72)
     print("  pt-autobuild :: PLAN DE COLOCACION (sintaxis por redes)")
     print("=" * 72)
@@ -1344,18 +1462,30 @@ def print_grouped_plan(parsed, placements, notes, iface_notes, link_notes,
         print(f'     {p["nombre"]:<10} {p["category"]:<11} label en '
               f'({p["x"]:>5}, {ly:>5})  (offset {oy}px)')
     print("-" * 72)
-    print("  3) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:")
+    print("  3) Cablear ENLACES (router-router)")
+    print("     [!] EXPERIMENTAL: el CALCULO del indice esta listo, pero la mecanica")
+    print("         del clic en Packet Tracer todavia NO esta confirmada a mano --")
+    print("         por ahora este paso solo CALCULA, no mueve el mouse:")
+    if not cabling_plan:
+        print("     (ninguno: no hay bloque 'ENLACES:', o falta 'router_interfaces' "
+              "en el catalogo)")
+    else:
+        for c in cabling_plan:
+            print(f'     {c["r1"]:<10} interfaz #{c["idx1"]:<2} ({c["if1"]})  <->  '
+                  f'{c["r2"]:<10} interfaz #{c["idx2"]:<2} ({c["if2"]})   [{c["cidr"]}]')
+    print("-" * 72)
+    print("  4) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:")
     for n in notes:
         print(f'     "{n["texto"]}"  -> ({n["x"]:>5}, {n["y"]:>5})   [{n["red"]}]')
     print("-" * 72)
-    print("  4) Notas de interfaz (LAN de router + enlaces)  [solo texto, NO configura IP]:")
+    print("  5) Notas de interfaz (LAN de router + enlaces)  [solo texto, NO configura IP]:")
     if not iface_notes:
         print("     (ninguna: no hay 'RED ... ROUTER' ni bloque 'ENLACES:')")
     else:
         for n in iface_notes:
             print(f'     {n["router"]:<10} "{n["texto"]}"  -> ({n["x"]:>5}, {n["y"]:>5})')
     print("-" * 72)
-    print("  5) Notas de enlace (CIDR completo, punto medio)  [solo texto, NO configura IP]:")
+    print("  6) Notas de enlace (CIDR completo, punto medio)  [solo texto, NO configura IP]:")
     if not link_notes:
         print("     (ninguna: no hay bloque 'ENLACES:')")
     else:
@@ -1363,7 +1493,7 @@ def print_grouped_plan(parsed, placements, notes, iface_notes, link_notes,
             label = f'{n["r1"]}-{n["r2"]}'
             print(f'     {label:<12} "{n["texto"]}"  -> ({n["x"]:>5}, {n["y"]:>5})')
     print("-" * 72)
-    print("  6) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):")
+    print("  7) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):")
     if ip_missing:
         print(f"     [!] SE OMITE: faltan puntos en data/ip_config_coords.json: "
               f"{', '.join(ip_missing)}")
@@ -1404,15 +1534,21 @@ def run_grouped(text, catalog, args):
         print(f"  - {e}")
         sys.exit(1)
 
-    # Paso 4 (config IP): se hace tras colocar todo. Aqui solo se comprueba
+    # Plan de cableado de ENLACES (router-router). Solo calculo por ahora --
+    # la mecanica del clic en Packet Tracer todavia no esta confirmada a
+    # mano (ver compute_cabling_plan / cable_link.py pendiente).
+    cabling_plan, cabling_warnings = compute_cabling_plan(parsed, placements, catalog)
+    warnings = warnings + cabling_warnings
+
+    # Paso 7 (config IP): se hace tras colocar todo. Aqui solo se comprueba
     # que ip_config_coords.json esta calibrado; si no, se omite con aviso.
     pcs_to_cfg = [p for p in placements
                   if p["category"] == "end_device" and p.get("ip")]
     ip_data = coords_io.load_coords(IP_CONFIG_COORDS_PATH)
     ip_missing = [k for k in configure_ip.REQUIRED_COORDS if ip_data.get(k) is None]
 
-    print_grouped_plan(parsed, placements, notes, iface_notes, link_notes,
-                       pcs_to_cfg, ip_missing, warnings, args.dry_run)
+    print_grouped_plan(parsed, placements, cabling_plan, notes, iface_notes,
+                       link_notes, pcs_to_cfg, ip_missing, warnings, args.dry_run)
     if args.dry_run:
         return
 
@@ -1455,6 +1591,13 @@ def run_grouped(text, catalog, args):
             rename_label.rename_label(p["x"], p["y"], p["nombre"],
                                       category=p["category"], pause=args.pause)
             renamed_ok += 1
+        # Cableado de ENLACES: el CALCULO (compute_cabling_plan) ya esta
+        # listo, pero la mecanica del clic en Packet Tracer todavia no esta
+        # confirmada a mano -- no se mueve el mouse para esto todavia.
+        if cabling_plan:
+            print(f"\n  [!] Cableado automatico pendiente: {len(cabling_plan)} "
+                  f"enlace(s) calculados, 0 cableados (falta confirmar la mecanica "
+                  f"del clic en Packet Tracer; ver print del plan arriba).")
         for n in notes:
             # focus_xy recupera el foco de la ventana entre nota y nota
             # (tras el Escape anterior el foco sale de Packet Tracer). Usa

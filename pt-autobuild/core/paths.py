@@ -21,6 +21,7 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data")
 COORDS_PATH = os.path.join(DATA_DIR, "coords.json")
 IP_CONFIG_COORDS_PATH = os.path.join(DATA_DIR, "ip_config_coords.json")
 ROUTER_COORDS_PATH = os.path.join(DATA_DIR, "router_coords.json")
+CABLE_COORDS_PATH = os.path.join(DATA_DIR, "cable_coords.json")
 
 TOPOLOGY_DIR = os.path.join(DATA_DIR, "topology")
 TOPOLOGY_HISTORY_DIR = os.path.join(TOPOLOGY_DIR, "history")

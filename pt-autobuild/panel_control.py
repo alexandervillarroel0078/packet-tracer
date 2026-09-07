@@ -1,16 +1,15 @@
 """
 panel_control.py - Panel de control flotante para pt-autobuild.
 
-Ventana pequena "siempre encima" con botones que disparan los MISMOS scripts
+Ventana pequena "siempre encima" con un boton que dispara el MISMO script
 que ya usas por terminal:
 
-    Colocar topologia   ->  build.py
-    Configurar IP de PC ->  configure_ip.py
-    Configurar Router   ->  routers/configure_router.py
+    Colocar topologia   ->  build.py  (coloca, renombra, cablea/notas, IP:
+                            todo el flujo automatizado en un solo comando)
 
-No reimplementa nada: cada boton arma los argumentos y llama a la funcion
-main() del script correspondiente. La salida (lo que verias en la terminal)
-se redirige en vivo al area de log de la ventana.
+No reimplementa nada: el boton arma los argumentos y llama a la funcion
+main() de build.py. La salida (lo que verias en la terminal) se redirige en
+vivo al area de log de la ventana.
 
 Seguridad (identica a los scripts):
     - Cuenta regresiva configurable antes de cada accion (el panel la hace y
@@ -29,7 +28,6 @@ incluido con Python en Windows, no hay que instalar nada extra.
 import json
 import os
 import queue
-import re
 import subprocess
 import sys
 import threading
@@ -46,32 +44,6 @@ if HERE not in sys.path:
 
 # DEBE importarse antes que pyautogui (fija DPI awareness en Windows).
 from core import dpi_aware  # noqa: E402
-
-
-# --------------------------------------------------------------------------
-# Utilidades de validacion ligera (para no arrancar un hilo si el dato es malo;
-# el script vuelve a validar de todos modos).
-# --------------------------------------------------------------------------
-def _looks_ipish(s):
-    parts = s.split(".")
-    return len(parts) == 4 and all(
-        p.isdigit() and 0 <= int(p) <= 255 for p in parts
-    )
-
-
-_HOSTNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,62}$")
-
-
-def _looks_hostname(s):
-    return bool(_HOSTNAME_RE.match(s)) and not s.endswith("-")
-
-
-def _is_int(s):
-    try:
-        int(s)
-        return True
-    except (TypeError, ValueError):
-        return False
 
 
 # --------------------------------------------------------------------------
@@ -130,11 +102,6 @@ class _QueueWriter:
 
 
 class PanelControl:
-    REQ_IP_COORDS = [
-        "desktop_tab", "ip_configuration_item", "static_radio", "close_button",
-        "ipv4_address", "subnet_mask", "default_gateway",
-    ]
-
     def __init__(self, root):
         self.root = root
         self.q = queue.Queue()
@@ -149,15 +116,16 @@ class PanelControl:
 
         root.title("pt-autobuild :: panel")
         root.attributes("-topmost", True)
-        # Tamano TOTAL fijo: cabe en 1366x768 (y de sobra en 1920x1080).
-        # El alto NO crece con el contenido: cada pestana tiene scroll propio.
+        # Tamano INICIAL (cabe en 1366x768 y de sobra en 1920x1080); la
+        # ventana es redimensionable a mano arrastrando el borde. El area de
+        # pestanas absorbe el espacio extra (ver nb.pack mas abajo y
+        # _make_scroll_tab); el log se queda con su alto de siempre.
         self.WIN_W, self.WIN_H = 390, 700
-        self.TAB_H = 360   # alto fijo del area de contenido de las pestanas
+        self.TAB_H = 360   # alto INICIAL del area de pestanas (crece con la ventana)
         root.geometry(f"{self.WIN_W}x{self.WIN_H}")
-        root.resizable(False, False)
+        root.resizable(True, True)
         try:
-            root.maxsize(self.WIN_W, self.WIN_H)
-            root.minsize(self.WIN_W, self.WIN_H)
+            root.minsize(self.WIN_W, self.WIN_H)  # no se achica mas que el diseno original
         except tk.TclError:
             pass
 
@@ -198,67 +166,59 @@ class PanelControl:
         self.opacity_scale.set(100)  # arranca 100% opaco
         self.opacity_scale.pack(side="left", fill="x", expand=True)
 
-        # ===== PESTANAS (ttk.Notebook) - alto fijo + scroll interno =====
+        # ===== PESTANAS (ttk.Notebook) - crece con la ventana + scroll interno =====
         self.nb = ttk.Notebook(self.root)
-        self.nb.pack(fill="x", **pad)
+        self.nb.pack(fill="both", expand=True, **pad)
         tab_colocar = self._make_scroll_tab(self.nb, "Colocar")
-        tab_config = self._make_scroll_tab(self.nb, "Configurar")
+        tab_cfg = self._make_scroll_tab(self.nb, "Config")
         tab_calib = self._make_scroll_tab(self.nb, "Calibracion")
 
         # --- Pestana 1: Colocar topologia ------------------------------
+        # f1 y topo_text expanden (fill="both", expand=True): usan el
+        # espacio extra cuando se agranda la ventana. El resto de la
+        # pestana (label, checkbox, boton) queda con su alto natural.
         f1 = ttk.LabelFrame(tab_colocar, text="Colocar topologia (build.py)")
-        f1.pack(fill="x", **pad)
+        f1.pack(fill="both", expand=True, **pad)
         ttk.Label(f1, text='Ej: "2 routers, 2 switches, 4 PC"').pack(
             anchor="w", padx=6, pady=(4, 0))
         self.topo_text = tk.Text(f1, height=3, width=36, wrap="word")
-        self.topo_text.pack(fill="x", padx=6, pady=4)
+        self.topo_text.pack(fill="both", expand=True, padx=6, pady=4)
+        self.topo_dry_run = tk.BooleanVar(value=False)
+        ttk.Checkbutton(f1, text="Dry-run (calcula e imprime el plan, no mueve el mouse)",
+                        variable=self.topo_dry_run).pack(anchor="w", padx=6, pady=(0, 2))
         b1 = ttk.Button(f1, text="Colocar", command=self._on_colocar)
         b1.pack(anchor="e", padx=6, pady=(0, 6))
         self._job_buttons.append(b1)
 
-        # --- Pestana 2: Configurar ------------------------------------
-        f2 = ttk.LabelFrame(tab_config, text="Configurar IP de PC (configure_ip.py)")
-        f2.pack(fill="x", **pad)
-        self.ip_name = self._labeled_entry(f2, "Dispositivo (ej. PC0)")
-        self.ip_addr = self._labeled_entry(f2, "IP (ej. 192.168.10.10)")
-        self.ip_mask = self._labeled_entry(f2, "Mascara (ej. 255.255.255.0)")
-        self.ip_gw = self._labeled_entry(f2, "Gateway (ej. 192.168.10.1)")
-        b2 = ttk.Button(f2, text="Aplicar", command=self._on_ip)
-        b2.pack(anchor="e", padx=6, pady=(2, 6))
-        self._job_buttons.append(b2)
+        # --- Pestana 2: Config (generar config de routers, config_gen.py) --
+        # Reutiliza el MISMO self.topo_text de la pestana "Colocar" (no se
+        # duplica el cuadro de pegado); solo agrega el selector de modo, el
+        # boton y un cuadro de salida de solo lectura propio. Es SOLO
+        # calculo (config_gen.py no toca pyautogui/Packet Tracer), asi que
+        # no usa _start_job/countdown: corre directo en el hilo de la GUI.
+        fcg = ttk.LabelFrame(tab_cfg, text="Generar configuracion de routers (config_gen.py)")
+        fcg.pack(fill="both", expand=True, **pad)
+        ttk.Label(fcg, text="Usa la topologia pegada en la pestana 'Colocar'.").pack(
+            anchor="w", padx=6, pady=(4, 0))
 
-        f3 = ttk.LabelFrame(tab_config,
-                            text="Configurar Router (routers/configure_router.py)")
-        f3.pack(fill="x", **pad)
-        self.rt_name = self._labeled_entry(f3, "Dispositivo (ej. Router0)")
-        self.rt_host = self._labeled_entry(f3, "Nuevo hostname (ej. R01)")
-        b3 = ttk.Button(f3, text="Aplicar", command=self._on_router)
-        b3.pack(anchor="e", padx=6, pady=(2, 6))
-        self._job_buttons.append(b3)
+        cfg_row = ttk.Frame(fcg)
+        cfg_row.pack(fill="x", padx=6, pady=4)
+        ttk.Label(cfg_row, text="Modo:").pack(side="left")
+        self.cfg_mode_var = tk.StringVar(value="Estatico")
+        ttk.Combobox(cfg_row, textvariable=self.cfg_mode_var,
+                    values=["Estatico", "RIP"], state="readonly", width=12
+                    ).pack(side="left", padx=(6, 0))
+        ttk.Button(cfg_row, text="Generar", command=self._on_generar_config
+                  ).pack(side="left", padx=(12, 0))
 
-        f6 = ttk.LabelFrame(tab_config, text="Mover dispositivo (move_device.py)")
-        f6.pack(fill="x", **pad)
-        self.mv_name = self._labeled_entry(f6, "Dispositivo (ej. Router0)")
-        self.mv_x = self._labeled_entry(f6, "Nueva X (px)")
-        self.mv_y = self._labeled_entry(f6, "Nueva Y (px)")
-        self.mv_random = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f6, text="Aleatorio dentro del lienzo (ignora X / Y)",
-                        variable=self.mv_random).pack(anchor="w", padx=6, pady=2)
-        b6 = ttk.Button(f6, text="Mover", command=self._on_move)
-        b6.pack(anchor="e", padx=6, pady=(2, 6))
-        self._job_buttons.append(b6)
-
-        f7 = ttk.LabelFrame(tab_config, text="Agregar nota (add_note.py)")
-        f7.pack(fill="x", **pad)
-        self.note_text = self._labeled_entry(f7, 'Texto (ej. "10.0.0.0/24")')
-        self.note_x = self._labeled_entry(f7, "X (px)")
-        self.note_y = self._labeled_entry(f7, "Y (px)")
-        self.note_random = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f7, text="Aleatorio dentro del lienzo (ignora X / Y)",
-                        variable=self.note_random).pack(anchor="w", padx=6, pady=2)
-        b7 = ttk.Button(f7, text="Agregar", command=self._on_note)
-        b7.pack(anchor="e", padx=6, pady=(2, 6))
-        self._job_buttons.append(b7)
+        cfg_outwrap = ttk.Frame(fcg)
+        cfg_outwrap.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        self.cfg_output = tk.Text(cfg_outwrap, height=10, width=36, wrap="none",
+                                  state="disabled", bg="#111", fg="#d0d0d0")
+        cfg_sb = ttk.Scrollbar(cfg_outwrap, command=self.cfg_output.yview)
+        self.cfg_output.configure(yscrollcommand=cfg_sb.set)
+        cfg_sb.pack(side="right", fill="y")
+        self.cfg_output.pack(side="left", fill="both", expand=True)
 
         # --- Pestana 3: Calibracion ----------------------------------
         # Solo ATAJOS: lanzan los comandos existentes tal cual en una consola
@@ -322,17 +282,11 @@ class PanelControl:
         ttk.Button(bottom, text="Limpiar log",
                    command=self._clear_log).pack(side="right")
 
-    def _labeled_entry(self, parent, label):
-        row = ttk.Frame(parent)
-        row.pack(fill="x", padx=6, pady=2)
-        ttk.Label(row, text=label, width=22).pack(side="left")
-        var = tk.StringVar()
-        ttk.Entry(row, textvariable=var).pack(side="left", fill="x", expand=True)
-        return var
-
     def _make_scroll_tab(self, notebook, text):
-        """Anade una pestana con alto FIJO (self.TAB_H) y scroll vertical
-        interno (Canvas + Scrollbar). Devuelve el frame donde meter el contenido.
+        """Anade una pestana con alto INICIAL self.TAB_H, que crece si se
+        agranda la ventana, y scroll vertical interno (Canvas + Scrollbar)
+        para cuando el contenido no entra. Devuelve el frame donde meter
+        el contenido.
         """
         page = ttk.Frame(notebook)
         notebook.add(page, text=text)
@@ -344,9 +298,19 @@ class PanelControl:
 
         inner = ttk.Frame(cv)
         win = cv.create_window((0, 0), window=inner, anchor="nw")
+
+        def _sync_inner_size(event, cv=cv, win=win, inner=inner):
+            # Ancho: siempre igual al del canvas (como ya hacia). Alto:
+            # al MENOS el alto visible del canvas, para que el contenido
+            # (ej. el cuadro de texto de "Colocar") pueda expandirse a ese
+            # espacio extra; si el contenido necesita mas, se respeta ese
+            # alto mayor y sigue scrolleando como antes.
+            cv.itemconfigure(win, width=event.width)
+            cv.itemconfigure(win, height=max(inner.winfo_reqheight(), event.height))
+
         inner.bind("<Configure>",
                    lambda e: cv.configure(scrollregion=cv.bbox("all")))
-        cv.bind("<Configure>", lambda e: cv.itemconfigure(win, width=e.width))
+        cv.bind("<Configure>", _sync_inner_size)
         self._scroll_canvases.append(cv)
         return inner
 
@@ -642,18 +606,9 @@ class PanelControl:
         try:
             import pyautogui
             import build
-            import configure_ip
-            import move_device
-            import add_note
-            try:
-                import routers.configure_router as configure_router
-            except ImportError:
-                import importlib.util
-                p = os.path.join(HERE, "routers", "configure_router.py")
-                spec = importlib.util.spec_from_file_location(
-                    "configure_router", p)
-                configure_router = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(configure_router)
+            import config_gen  # noqa: F401  no usa pyautogui, pero importa build (si lo
+                               # exige) -- se carga aca igual para dar el mismo mensaje
+                               # de error amigable que el resto si falta una dependencia.
             from core import coords as coords_io
             from core.topology import load_topology
             from core.paths import (COORDS_PATH, IP_CONFIG_COORDS_PATH,
@@ -666,10 +621,7 @@ class PanelControl:
         self._mods = {
             "pyautogui": pyautogui,
             "build": build,
-            "configure_ip": configure_ip,
-            "configure_router": configure_router,
-            "move_device": move_device,
-            "add_note": add_note,
+            "config_gen": config_gen,
             "coords_io": coords_io,
             "load_topology": load_topology,
             "COORDS_PATH": COORDS_PATH,
@@ -682,48 +634,18 @@ class PanelControl:
         self._emit(("" if ok else "[!] ") + msg)
         return self._mods
 
-    # ----- prechequeos (evitan la calibracion interactiva) ----------
-    def _precheck_topology(self, m):
-        if not os.path.exists(m["TOPOLOGY_ACTUAL_PATH"]):
-            return ("No hay ninguna topologia colocada todavia "
-                    "(data/topology/topologia_actual.json). Usa 'Colocar' primero.")
-        return None
-
-    def _precheck_ip(self, m):
-        err = self._precheck_topology(m)
-        if err:
-            return err
-        data = m["coords_io"].load_coords(m["IP_CONFIG_COORDS_PATH"])
-        missing = [k for k in self.REQ_IP_COORDS if data.get(k) is None]
-        if missing:
-            return ("Faltan puntos calibrados en data/ip_config_coords.json: "
-                    + ", ".join(missing)
-                    + "\nCalibra en la terminal:  python configure_ip.py --calibrate")
-        return None
-
-    def _precheck_router(self, m):
-        err = self._precheck_topology(m)
-        if err:
-            return err
-        rdata = m["coords_io"].load_coords(m["ROUTER_COORDS_PATH"])
-        if rdata.get("cli_tab") is None:
-            return ("Falta 'cli_tab' en data/router_coords.json.\n"
-                    "Calibra:  python routers/configure_router.py --calibrate")
-        ipdata = m["coords_io"].load_coords(m["IP_CONFIG_COORDS_PATH"])
-        if ipdata.get("close_button") is None:
-            return ("Falta 'close_button' en data/ip_config_coords.json.\n"
-                    "Calibra:  python configure_ip.py --calibrate")
-        return None
-
     # ----- handlers de los botones ---------------------------------
     def _on_colocar(self):
         text = self.topo_text.get("1.0", "end").strip()
         if not text:
             self._emit("[ERROR] escribe una descripcion de topologia primero.")
             return
+        argv = ["build.py", text, "--countdown", "0"]
+        if self.topo_dry_run.get():
+            argv.append("--dry-run")
         self._start_job(
             "Colocar topologia",
-            argv=["build.py", text, "--countdown", "0"],
+            argv=argv,
             main_getter=lambda m: m["build"].main,
             precheck=self._precheck_topology_optional,
         )
@@ -733,85 +655,43 @@ class PanelControl:
         # propio script valida). Nada que comprobar aqui.
         return None
 
-    def _on_ip(self):
-        name = self.ip_name.get().strip()
-        ip = self.ip_addr.get().strip()
-        mask = self.ip_mask.get().strip()
-        gw = self.ip_gw.get().strip()
-        if not (name and ip and mask and gw):
-            self._emit("[ERROR] completa dispositivo, IP, mascara y gateway.")
-            return
-        for lbl, val in (("IP", ip), ("mascara", mask), ("gateway", gw)):
-            if not _looks_ipish(val):
-                self._emit(f"[ERROR] {lbl} '{val}' no parece IPv4 (x.x.x.x, 0-255).")
-                return
-        self._start_job(
-            "Configurar IP",
-            argv=["configure_ip.py", name, ip, mask, gw, "--countdown", "0"],
-            main_getter=lambda m: m["configure_ip"].main,
-            precheck=self._precheck_ip,
-        )
-
-    def _on_router(self):
-        name = self.rt_name.get().strip()
-        host = self.rt_host.get().strip()
-        if not (name and host):
-            self._emit("[ERROR] completa dispositivo y hostname.")
-            return
-        if not _looks_hostname(host):
-            self._emit(f"[ERROR] hostname '{host}' invalido: empieza por letra, "
-                       f"solo letras/digitos/guiones, sin guion final, max 63.")
-            return
-        self._start_job(
-            "Configurar Router",
-            argv=["configure_router.py", name, host, "--countdown", "0"],
-            main_getter=lambda m: m["configure_router"].main,
-            precheck=self._precheck_router,
-        )
-
-    def _on_move(self):
-        name = self.mv_name.get().strip()
-        if not name:
-            self._emit("[ERROR] indica el nombre del dispositivo a mover.")
-            return
-        argv = ["move_device.py", name]
-        if self.mv_random.get():
-            argv.append("--random")
-        else:
-            xs, ys = self.mv_x.get().strip(), self.mv_y.get().strip()
-            if not (_is_int(xs) and _is_int(ys)):
-                self._emit("[ERROR] X e Y deben ser enteros, o marca 'Aleatorio'.")
-                return
-            argv += [xs, ys]
-        argv += ["--countdown", "0"]
-        self._start_job(
-            "Mover dispositivo",
-            argv=argv,
-            main_getter=lambda m: m["move_device"].main,
-            precheck=self._precheck_topology,
-        )
-
-    def _on_note(self):
-        text = self.note_text.get().strip()
+    def _on_generar_config(self):
+        """Genera la config de routers (config_gen.py) a partir del MISMO
+        texto de la pestana 'Colocar'. Solo calculo: no usa _start_job (sin
+        countdown, sin hilo, sin pyautogui) -- corre directo y es instantaneo.
+        """
+        text = self.topo_text.get("1.0", "end").strip()
         if not text:
-            self._emit("[ERROR] escribe el texto de la nota.")
+            self._emit("[ERROR] pega una topologia en la pestana 'Colocar' primero.")
             return
-        argv = ["add_note.py", text]
-        if self.note_random.get():
-            argv.append("--random")
+        mods = self._load_modules()
+        if mods is None:
+            return
+        config_gen = mods["config_gen"]
+        modo = (config_gen.MODE_STATIC if self.cfg_mode_var.get() == "Estatico"
+               else config_gen.MODE_RIP)
+        try:
+            configs, warnings = config_gen.generate_all_configs(text, modo)
+        except (config_gen.TopologyError, ValueError) as e:
+            self._set_cfg_output(f"ERROR: {e}")
+            self._emit(f"[Config] ERROR: {e}")
+            return
+
+        if not configs:
+            self._set_cfg_output("(no hay routers en la topologia)")
         else:
-            xs, ys = self.note_x.get().strip(), self.note_y.get().strip()
-            if not (_is_int(xs) and _is_int(ys)):
-                self._emit("[ERROR] X e Y deben ser enteros, o marca 'Aleatorio'.")
-                return
-            argv += [xs, ys]
-        argv += ["--countdown", "0"]
-        self._start_job(
-            "Agregar nota",
-            argv=argv,
-            main_getter=lambda m: m["add_note"].main,
-            precheck=self._precheck_topology_optional,  # add_note no requiere calibracion propia
-        )
+            body = "\n\n".join(configs[r] for r in configs)
+            if warnings:
+                body += "\n\n" + "\n".join(f"[!] {w}" for w in warnings)
+            self._set_cfg_output(body)
+        self._emit(f"[Config] modo {self.cfg_mode_var.get()}: {len(configs)} "
+                   f"router(es), {len(warnings)} aviso(s).")
+
+    def _set_cfg_output(self, text):
+        self.cfg_output.configure(state="normal")
+        self.cfg_output.delete("1.0", "end")
+        self.cfg_output.insert("1.0", text)
+        self.cfg_output.configure(state="disabled")
 
     # ----- motor de ejecucion --------------------------------------
     def _start_job(self, label, argv, main_getter, precheck):
