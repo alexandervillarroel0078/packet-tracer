@@ -2,7 +2,7 @@
 core.canvas - limites del lienzo de Packet Tracer, leidos de la calibracion.
 
 El rectangulo de trabajo se guarda en data/coords.json bajo 'canvas'
-(top_left / bottom_right), lo genera calibrate.py. Varios scripts necesitan
+(top_left / bottom_right), lo genera la calibracion (pestana Calibracion). Varios scripts necesitan
 lo mismo: comprobar que un punto cae dentro del lienzo o sacar uno al azar.
 
     load_box()                 -> (x0, y0, x1, y1)   (sale con error si falta)

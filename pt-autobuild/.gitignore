@@ -1,16 +1,15 @@
 __pycache__/
 *.pyc
+*.tmp
+.pytest_cache/
 
-# Datos especificos de cada maquina y artefactos generados
-# (coords.json, ip_config_coords.json, router_coords.json, topologia_*.json).
-# El formato del registro esta documentado en topologia_ejemplo.json (versionado).
-/data/
+# Datos propios de cada equipo y artefactos generados (coordenadas, registros de topologia,
+# estado del panel, registro de errores). El formato del registro esta documentado en
+# config/topologia_ejemplo.json (versionado).
+data/
 
-# compat: coords.json suelto en la raiz de versiones antiguas
-/coords.json
-
-# Clave de API local (copia .env.example a .env)
+# Clave de API local (se crea desde la pestana Ajustes o copiando .env.example)
 .env
 
-# Recortes generados por la autocalibracion (especificos de cada maquina)
-/reference_images/auto_*.png
+# Recortes de referencia generados por la autocalibracion (dependen del equipo)
+reference_images/auto_*.png

@@ -19,7 +19,7 @@ Flujo (ver run_autocalibrate):
 Limite honesto de la verificacion: matchTemplate comprueba que la zona es
 visualmente distintiva y estable (el punto cae sobre algo reconocible que se
 vuelve a encontrar ahi), no que la IA haya elegido el elemento semanticamente
-correcto. Por eso la salida marca la confianza y --dry-run permite revisar antes.
+correcto. Por eso la salida marca la confianza y "Solo mostrar" (dry-run) permite revisar antes.
 
 La logica pura (conversion de coordenadas, validacion del JSON de la IA, decision
 de cache) no depende de pyautogui/cv2/red y esta cubierta por tests/.
@@ -118,7 +118,6 @@ STATE_HINTS = {
 }
 TEST_MODEL = "2911"       # modelo que se escribe en el buscador para filtrar
 FILTER_WAIT = 1.0         # s de espera tras escribir
-DEFAULT_CABLE_TYPE = "serial"
 MENU_ROW_MIN, MENU_ROW_MAX = 8, 80
 MENU_COL_TOL = 20
 MENU_MAX_OFFSET = 600
@@ -494,7 +493,7 @@ def get_dpi_scale():
 
 def capture():
     """Captura de pantalla completa. Devuelve (PIL.Image, px_por_unidad)."""
-    from core import dpi_aware  # noqa: F401  antes de pyautogui
+    from core import dpi_aware  # noqa: F401  fija la DPI awareness; debe importarse antes de pyautogui
     import pyautogui
     shot = pyautogui.screenshot()
     return shot, shot.width / float(pyautogui.size()[0])
@@ -509,7 +508,7 @@ def find_pt_window(screen_size):
     sw, sh = screen_size
     full = [0, 0, int(sw), int(sh)]
     try:
-        from core import dpi_aware  # noqa: F401
+        from core import dpi_aware  # noqa: F401  fija la DPI awareness; debe importarse antes de pyautogui
         import pyautogui
         wins = [w for w in pyautogui.getWindowsWithTitle("Packet Tracer")
                 if w.width > 0 and w.height > 0 and not getattr(w, "isMinimized", False)]
@@ -526,7 +525,7 @@ def find_pt_window(screen_size):
 
 
 def current_env():
-    from core import dpi_aware  # noqa: F401
+    from core import dpi_aware  # noqa: F401  fija la DPI awareness; debe importarse antes de pyautogui
     import pyautogui
     screen = [int(v) for v in pyautogui.size()]
     window, warn = find_pt_window(screen)
@@ -812,7 +811,7 @@ def _calibrate_filtered(el, results, creds, env, test_model, dry_run, log):
             f"escribiria '{test_model}', se esperarian {FILTER_WAIT:g}s, se capturaria, se "
             "pediria a la IA el primer resultado y se limpiaria el buscador. No se toca la app.")
         return {"status": "unverified", "reason": "dry-run: no se escribio en la app"}
-    from core import dpi_aware  # noqa: F401
+    from core import dpi_aware  # noqa: F401  fija la DPI awareness; debe importarse antes de pyautogui
     import time
     import pyautogui
 
@@ -1004,7 +1003,7 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     log("")
     _print_table(table, log)
     if dry_run:
-        log("\n  --dry-run: NO se guardo nada.")
+        log("\n  Dry-run: NO se guardo nada.")
     else:
         for f, data in outputs.items():
             if not coords_io.save_coords(_file_paths()[f], data):
@@ -1029,7 +1028,7 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
 def run_check(groups=GROUPS, dry_run=False, log=emit, table_out=None):
     """
     --check: SIN API. Re-verifica con matchTemplate todos los puntos guardados y reporta
-    cuales ya no coinciden. Actualiza el estado guardado salvo con --dry-run.
+    cuales ya no coinciden. Actualiza el estado guardado salvo en dry-run.
     Devuelve 1 si algun elemento queda "requiere manual", si no 0.
     """
     from core import coords as coords_io
@@ -1084,7 +1083,7 @@ def run_check(groups=GROUPS, dry_run=False, log=emit, table_out=None):
             extra = "" if e.state == "main" else f"  (necesita estado '{e.state}': {STATE_HINTS[e.state]})"
             log(f"    {e.name:<24} confianza={'-' if conf is None else f'{conf:.2f}'}{extra}")
     if dry_run:
-        log("\n  --dry-run: no se actualizo el estado guardado.")
+        log("\n  Dry-run: no se actualizo el estado guardado.")
     else:
         for f in changed_files:
             coords_io.save_coords(_file_paths()[f], datas[f])

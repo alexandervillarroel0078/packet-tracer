@@ -1,5 +1,5 @@
 """
-calibrate.py - Calibracion minima para pt-autobuild (flujo por buscador).
+calibrate - Calibracion minima para pt-autobuild (flujo por buscador).
 
 Genera coords.json con solo 3 datos + tamaño de pantalla:
 
@@ -16,7 +16,6 @@ El rectangulo del lienzo se deriva de:
 Uso (desde el panel, pestana Calibracion; o como funciones):
     calibrate_by_images(confidence=0.85)          # calibracion por imagenes de referencia
     calibrate_point("canvas_top_left")            # captura UN punto con F8
-    list_reference_images()                       # comprobar las imagenes de referencia
     auto_calibrate(dry_run=True)                  # autocalibracion con IA (dry-run por defecto)
     check_calibration()                           # sin API: re-verifica lo guardado
 
@@ -47,7 +46,7 @@ MARGIN_LEFT = 12     # borde izquierdo del lienzo (valor fijo)
 
 REF_IMAGES = ["search_field.png", "top_toolbar.png", "right_toolbar.png"]
 
-# --manual <nombre>  ->  (seccion, clave) en coords.json
+# nombre del punto manual  ->  (seccion, clave) en coords.json
 MANUAL_KEYS = {
     "search_field": ("search_field", None),
     "filtered_result": ("filtered_result", None),
@@ -74,7 +73,7 @@ def get_point(data, section, key):
 # --- localizacion por imagen ---------------------------------------
 def has_opencv():
     try:
-        import cv2  # noqa: F401
+        import cv2  # noqa: F401  solo comprueba que opencv esta instalado (no se usa el modulo)
         return True
     except ImportError:
         return False
@@ -138,21 +137,6 @@ def compute_canvas(top_box, right_box, sf_box):
 
 
 # --- modos ------------------------------------------------------
-def list_reference_images(log=None):
-    """Informa que imagenes de referencia existen. Devuelve {nombre: existe}."""
-    log = common.get_log(log)
-    log(f"  Carpeta: {REFDIR}   (existe: {os.path.isdir(REFDIR)})")
-    log("-" * 50)
-    out = {}
-    for n in REF_IMAGES:
-        p = os.path.join(REFDIR, n)
-        out[n] = os.path.exists(p)
-        mark = "OK   " if out[n] else "FALTA"
-        size = f"{os.path.getsize(p)} B" if out[n] else ""
-        log(f"  {mark} {n:<20} {size}")
-    return out
-
-
 def calibrate_point(name, *, countdown=3, log=None, cancel=None):
     """Captura UN punto de coords.json con F8 (ESC cancela). Devuelve [x, y] o None."""
     log = common.get_log(log)

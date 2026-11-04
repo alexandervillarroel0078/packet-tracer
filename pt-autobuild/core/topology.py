@@ -43,7 +43,7 @@ def find_device(topology, name):
 
 
 # ======================================================================
-#  Logica movida desde automation/build.py (sin cambios de comportamiento)
+#  Parseo por redes, layout, IPs, plan de enlaces y registros
 # ======================================================================
 
 # --- Parametros de layout (pixeles) --------------------------------------
@@ -273,8 +273,8 @@ def compute_menu_index(model, iface_name, used_ifaces, catalog, category="router
     catalog['router_interfaces'] o catalog['switch_interfaces']. El
     cableado automatico de ENLACES (compute_cabling_plan) solo usa
     'router' (alcance confirmado: router-router); 'switch' esta pensado
-    para uso manual/exploratorio (ej. cable_link.py probado a mano contra
-    un switch) hasta que se decida integrar router-switch a build.py.
+    para uso manual/exploratorio (ej. cable_link probado a mano contra
+    un switch) hasta que se decida integrar router-switch al cableado automatico.
 
     Se filtra sacando 'used_ifaces' de la lista completa y se busca la
     posicion de 'iface_name' en la lista restante.

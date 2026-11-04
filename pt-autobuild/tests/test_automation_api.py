@@ -200,11 +200,9 @@ def test_link_devices_dry_run_y_faltan_puntos(registry, lines):
         cable_link.link_devices("R01", 3, "PC1", 0, dry_run=False, countdown=0)
 
 
-def test_calibracion_funciones_basicas(lines):
+def test_calibracion_funciones_basicas():
     with pytest.raises(PTError):
         calibrate.calibrate_point("nada")
-    out = calibrate.list_reference_images(lines.append)
-    assert set(out) == set(calibrate.REF_IMAGES)
 
 
 # --- captura de puntos (F8) ------------------------------------------------

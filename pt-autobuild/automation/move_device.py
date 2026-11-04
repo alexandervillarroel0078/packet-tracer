@@ -4,7 +4,7 @@ move_device.py - Mueve un dispositivo YA colocado en Cisco Packet Tracer.
 Aprovecha que data/topology/topologia_actual.json guarda la posicion (x, y)
 de cada dispositivo por su nombre. Lee esa posicion actual, arrastra el
 dispositivo hasta la nueva posicion y ACTUALIZA el registro para que el
-resto de scripts (configure_ip.py, configure_router.py) sigan encontrandolo.
+resto de flujos (configure_ip, configure_router) sigan encontrandolo.
 
 Uso (desde el panel, pestana Colocar -> "Mover dispositivo"; o desde codigo):
     move_device("Router0", 400, 250, dry_run=False)   # a coordenadas exactas

@@ -25,8 +25,8 @@ Estado: EXPERIMENTAL, pero la mecanica YA fue confirmada a mano:
 Lo que SI falta calibrar en tu maquina (pixeles especificos de tu
 resolucion/zoom): la posicion del icono de rayo, la posicion del icono de
 CADA tipo de cable que uses en la sub-paleta, y la geometria de la lista
-(offset del item 0 + altura de fila). Se capturan en vivo con --calibrate
---tipo <TIPO> (mueve el mouse + ESPACIO), NO se miden en una imagen.
+(offset del item 0 + altura de fila). Se capturan en vivo con calibrate_cable() (pestana
+Calibracion: mueve el mouse y pulsa F8), NO se miden en una imagen.
 
 Reutiliza core/:
     dpi_aware    marca el proceso DPI-aware (antes que pyautogui)
@@ -41,9 +41,10 @@ Uso (desde el panel, o como funciones):
 
 Los INDICES (3, 3 / 5, 3 arriba) son el resultado YA calculado por
 core.topology.compute_menu_index() -- este script no los recalcula, solo hace los
-clics. Fuera de --calibrate, este script asume que Packet Tracer no tiene
-NADA cableado todavia en los dispositivos indicados (por eso build.py
-cablea INMEDIATAMENTE despues de colocar, antes de cualquier nota).
+clics. Fuera de la calibracion, asume que Packet Tracer no tiene NADA cableado todavia en
+los dispositivos indicados (el indice de menu depende de las interfaces ya usadas). El
+cableado automatico desde build_topology NO esta implementado todavia: solo se calcula el
+plan; estas funciones se usan a mano.
 
 Seguridad: cuenta regresiva, failsafe de pyautogui (mouse a la esquina
 superior izquierda = aborta), pausa configurable entre pasos.
@@ -88,7 +89,7 @@ def interface_item_xy(device_pos, index, cable_data):
     Formula lineal confirmada a mano: offset FIJO desde el punto donde se
     clickeo el dispositivo, mas 'index' veces la altura de fila (la lista
     es vertical y regular). 'device_pos' es la posicion del icono (la
-    misma que build.py uso para colocarlo), no la del item.
+    misma que build_topology uso para colocarlo), no la del item.
     """
     dx, dy = device_pos
     ox, oy = cable_data["list_offset"]
@@ -154,7 +155,7 @@ def cable_all(links, cable_data, *, tipo=DEFAULT_TIPO, pause=0.4, list_delay=0.4
     r1/r2 a sus posiciones reales antes de llamar esto), mas un 'tipo' por
     link si se necesitan mezclar tipos de cable en el mismo run; si un
     link no trae 'tipo', usa el parametro 'tipo' de este llamado. No
-    duplica esta logica en build.py: se reutiliza cable_all() tal cual.
+    duplica esta logica en build: se reutilizara cable_all() tal cual.
 
     Propaga FailSafeException / KeyboardInterrupt en el cable que fallo;
     los cables anteriores en la lista ya quedaron hechos. Devuelve cuantos

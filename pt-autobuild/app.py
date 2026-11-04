@@ -1,7 +1,7 @@
 """
 app.py - unico punto de entrada de pt-autobuild: abre el panel de control.
 
-    doble clic en iniciar.bat   (o: python app.py)
+    doble clic en iniciar.bat
 """
 
 import os

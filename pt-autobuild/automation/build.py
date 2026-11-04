@@ -1,7 +1,7 @@
 """
 build.py - Colocacion automatica de dispositivos en Cisco Packet Tracer.
 
-Lee una topologia simple en texto, resuelve cada modelo contra device_catalog.json,
+Lee una topologia simple en texto, resuelve cada modelo contra config/device_catalog.json,
 calcula un layout en cuadricula y coloca cada dispositivo con el flujo por
 BUSCADOR (el buscador de Packet Tracer es global y siempre visible, no hace
 falta abrir ninguna categoria):
@@ -9,15 +9,14 @@ falta abrir ninguna categoria):
     1. clic en search_field                (coords.json)
     2. Ctrl+A + Supr                        (limpiar texto previo)
     3. escribir el nombre del modelo        (filtra en vivo, sin Enter)
-    4. esperar --filter-delay a que filtre
+    4. esperar filter_delay a que filtre
     5. clic en filtered_result             (coords.json, posicion fija unica)
     6. clic en la posicion calculada del lienzo
 
-Uso:
-    python build.py "4 routers, 4 switches, 8 PCs" --dry-run
-    python build.py "3 routers modelo 4331, 2 switches modelo 2960, 5 PC, 1 tablet"
-    python build.py --file topologia.txt
-    python build.py --list-models
+Uso (desde el panel, pestana Colocar; o como funcion):
+    build_topology("4 routers, 4 switches, 8 PCs")                 # dry-run (por defecto)
+    build_topology("3 routers modelo 4331, 2 switches, 5 PC", dry_run=False)
+    build_topology(texto_por_redes, dry_run=False, countdown=5, log=print, cancel=evento)
 
 Sintaxis de topologia (clausulas separadas por comas o saltos de linea):
     <n> <tipo> [modelo <M>]
@@ -28,7 +27,7 @@ Sintaxis de topologia (clausulas separadas por comas o saltos de linea):
     Ejemplos: "3 routers modelo 4331"   "2 switches"   "5 PC"   "1 tablet"
               "4 routers, 4 switches, 8 PCs"   (sigue valiendo; usa defaults)
 
-Sintaxis por REDES agrupadas (compatible con pt-asistente; --file recomendado):
+Sintaxis por REDES agrupadas (compatible con pt-asistente; carga un archivo desde el panel):
     SWITCHES: Sw1, Sw2
     ROUTERS: R01, R02
     RED Red1: 192.168.10.0/24 R01          # R01 es el gateway (interfaz LAN)
@@ -60,8 +59,8 @@ Sintaxis por REDES agrupadas (compatible con pt-asistente; --file recomendado):
     - Tras colocar cada dispositivo se renombra su LABEL VISUAL (el nombre
       debajo del icono) para que coincida con el nombre declarado (ej.
       "Router11" -> "R01"); reutiliza rename_label.rename_label. Es SOLO el
-      label del lienzo, no el hostname por CLI (eso es routers/
-      configure_router.py, aparte). Offset confirmado a mano: 38px para
+      label del lienzo, no el hostname por CLI (eso es
+      automation/configure_router.py, aparte). Offset confirmado a mano: 38px para
       router; switch/end_device arrancan con el mismo valor, pendiente de
       confirmar (ver rename_label.LABEL_OFFSET_Y).
     - Tras renombrar, se coloca una NOTA con el CIDR de cada red
@@ -95,17 +94,18 @@ Sintaxis por REDES agrupadas (compatible con pt-asistente; --file recomendado):
       ip2, mascara, nota_red: {texto, posicion}}] por cada 'ENLACES:' --
       todo esto es solo registro/memoria, no se aplica en Packet Tracer.
 
-Opciones:
-    --file RUTA        Topologia desde archivo de texto (acepta '#' de comentario).
-    --catalog RUTA     Catalogo alternativo (def. device_catalog.json).
-    --dry-run          Calcula e imprime el plan SIN mover el mouse.
-    --list-models      Imprime el catalogo y sale.
-    --pause SEG        Pausa entre clics (def. 0.4).
-    --filter-delay SEG Espera tras escribir, antes de clicar el resultado (def. 0.4).
-    --countdown N      Cuenta regresiva antes de empezar (def. 5).
+Parametros de build_topology:
+    dry_run=True        Calcula y muestra el plan SIN mover el mouse (valor por defecto).
+    pause, filter_delay Pausas (s) entre clics y tras escribir el modelo (def. 0.4).
+    countdown           Cuenta regresiva antes de empezar (def. 5; el panel la hace visible).
+    catalog_path        Catalogo alternativo (def. config/device_catalog.json).
+    log, cancel         Callback de mensajes y threading.Event de cancelacion.
+    progress            Callback (hecho, total) para la barra de progreso.
 
 Alcance (a proposito limitado):
-    - Solo coloca dispositivos. No cablea. No configura. No renombra.
+    - Coloca dispositivos, renombra su label, escribe las notas y configura la IP de las PCs.
+    - El CABLEADO automatico NO esta implementado: solo se calcula el plan de ENLACES
+      (compute_cabling_plan); los cables se conectan a mano.
     - No lee la pantalla: es "a ciegas", confia en coords.json y en el catalogo.
 
 Seguridad:
@@ -222,22 +222,10 @@ def print_plan(resolved, placements, warnings, dry_run, log=None):
     log("=" * 72)
 
 
-def print_catalog(catalog, log=None):
-    log = common.get_log(log)
-    log("  device_catalog.json")
-    log("-" * 50)
-    for cat in CAT_ORDER:
-        cat_key, _ = CAT_INFO[cat]
-        default = catalog["defaults"].get(cat_key, "(sin default)")
-        log(f"  {cat_key.replace('_', ' ')}  (default: {default})")
-        for m in catalog[cat_key]:
-            log(f"    - {m}")
-
-
 def save_topology_record(record, when, log=None):
     log = common.get_log(log)
     """
-    Escribe dos archivos junto a build.py:
+    Escribe dos archivos en data/topology/:
       - topologia_<fecha>_<hora>.json  (historico, no se sobrescribe)
       - topologia_actual.json          (siempre la ultima ejecucion)
     """
@@ -327,7 +315,7 @@ def print_grouped_plan(parsed, placements, cabling_plan, notes, iface_notes,
     if ip_missing:
         log(f"     [!] SE OMITE: faltan puntos en data/ip_config_coords.json: "
               f"{', '.join(ip_missing)}")
-        log("         Calibra con:  python configure_ip.py --calibrate")
+        log('         Calibra con:  pestana Calibracion > boton "Calibrar ventana IP"')
     elif not pcs_to_cfg:
         log("     (no hay PCs con IP asignada)")
     else:
@@ -363,7 +351,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
 
     # Plan de cableado de ENLACES (router-router). Solo calculo por ahora --
     # la mecanica del clic en Packet Tracer todavia no esta confirmada a
-    # mano (ver compute_cabling_plan / cable_link.py pendiente).
+    # mano (ver compute_cabling_plan; automation/cable_link.py esta pendiente de integrar).
     cabling_plan, cabling_warnings = compute_cabling_plan(parsed, placements, catalog)
     warnings = warnings + cabling_warnings
 
@@ -560,11 +548,6 @@ class BuildOptions:
         self.countdown = max(0, int(countdown))
         self.pause = pause
         self.filter_delay = filter_delay
-
-
-def list_models(catalog_path=None, log=None):
-    """Muestra el catalogo de modelos disponibles."""
-    print_catalog(load_catalog(catalog_path or CATALOG_PATH), log)
 
 
 def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown=5,

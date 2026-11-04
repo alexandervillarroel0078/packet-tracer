@@ -17,7 +17,6 @@ import datetime
 import os
 import queue
 import threading
-import time
 import traceback
 
 from core import log as core_log
@@ -180,8 +179,3 @@ class ActionRunner:
             return path
         except OSError:
             return None
-
-
-def sleep_cancelable(cancel, seconds):
-    """Espera `seconds` o hasta que cancel se active. True si se cancelo."""
-    return cancel.wait(seconds) if cancel is not None else (time.sleep(seconds) or False)

@@ -10,14 +10,13 @@ Reutiliza core/:
     canvas      limites del lienzo calibrado (in_box / random_in_box)
     ptwindow    click_point / park_mouse
 
-Uso (desde pt-autobuild/):
-    python add_note.py "10.0.0.0/24" 300 250          # posicion exacta
-    python add_note.py "LAN de gestion" --random      # posicion aleatoria
-    python add_note.py "texto" 300 250 --dry-run      # plan, sin tocar el mouse
+Uso (como funcion; el panel usa la misma secuencia dentro de build_topology):
+    add_note("10.0.0.0/24", 300, 250)                        # posicion exacta (dry-run)
+    add_note("LAN de gestion", random_pos=True)              # posicion aleatoria
+    add_note("texto", 300, 250, dry_run=False)               # escribe de verdad
 
-Modo (obligatorio, uno de los dos, no ambos):
-    X Y        posicion exacta de la nota (enteros, pixeles de pantalla)
-    --random   posicion aleatoria dentro del canvas calibrado, con margen
+dry_run=True es el valor por defecto: solo muestra el plan. La posicion es X Y (enteros, pixeles
+de pantalla) O random_pos=True (aleatoria dentro del canvas calibrado, con margen).
 
 Secuencia (confirmada a mano en Packet Tracer):
     cuenta regresiva -> clic de foco en (X, Y) -> tecla 'n' (Place Note Mode)
@@ -41,7 +40,7 @@ from core import ptwindow  # noqa: E402
 from core.errors import PTError
 from automation import common
 
-DEFAULT_MARGIN = 30  # px de separacion con los bordes para --random
+DEFAULT_MARGIN = 30  # px de separacion con los bordes para la posicion aleatoria
 
 
 def place_note(text, x, y, *, pause=0.4, tool_delay=0.4, type_interval=0.03,

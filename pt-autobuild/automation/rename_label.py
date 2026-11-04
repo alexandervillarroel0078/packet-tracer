@@ -5,11 +5,11 @@ dispositivo YA colocado en el lienzo de Cisco Packet Tracer.
 Alcance (a proposito limitado):
     - SOLO el label visual del lienzo (el nombre que se ve debajo del icono,
       ej. "Router11" -> "R01"). NO toca el hostname por CLI del dispositivo
-      (eso lo hace, aparte, routers/configure_router.py; no se mezcla aqui).
+      (eso lo hace, aparte, automation/configure_router.py; no se mezcla aqui).
 
 Estado: EXPERIMENTAL, todavia no confirmado a mano en Packet Tracer.
-    A diferencia de add_note.py / configure_ip.py / configure_router.py (que
-    documentan un flujo ya probado a mano), este script encapsula una
+    A diferencia de add_note / configure_ip / configure_router (que documentan
+    un flujo ya probado a mano), este modulo encapsula una
     HIPOTESIS de como deberia comportarse el rename de un label:
 
         clic en el label (icono_x, icono_y + offset_y)
@@ -19,45 +19,36 @@ Estado: EXPERIMENTAL, todavia no confirmado a mano en Packet Tracer.
            Escape porque es un cuadro multilinea y Enter le metaria un salto
            de linea; un label de nombre es de una sola linea, asi que Enter
            debería confirmar en vez de cancelar) -- si no funciona, probar
-           --confirm-key click-away (clic en un punto vacio del lienzo).
+           confirm_key="click-away" (clic en un punto vacio del lienzo).
 
-    Probalo aqui, aislado y con --dry-run primero, ANTES de que build.py lo
-    use en cadena sobre muchos dispositivos. Si el offset o la tecla de
-    confirmacion no coinciden con lo que ves en pantalla, ajustalos con
-    --offset-y / --confirm-key (o --away-x/--away-y para click-away) hasta
-    confirmar la secuencia; recien ahi conviene integrarlo a build.py.
+    Probalo aislado y con dry_run=True primero, ANTES de usarlo en cadena sobre muchos
+    dispositivos (build_topology ya lo hace). Si el offset o la tecla de confirmacion no
+    coinciden con lo que ves en pantalla, ajustalos con offset_y / confirm_key (o away_xy
+    para click-away) hasta confirmar la secuencia.
 
 Reutiliza core/:
     dpi_aware   marca el proceso DPI-aware (antes que pyautogui)
     canvas      limites del lienzo calibrado (para el punto de click-away)
     ptwindow    click_point / park_mouse
 
-Uso (desde pt-autobuild/):
-    python rename_label.py 400 250 R01 --category router --dry-run
-    python rename_label.py 400 250 R01 --category router
-    python rename_label.py 400 250 R01 --category router --offset-y 45
-    python rename_label.py 400 250 R01 --category router --confirm-key click-away
-    python rename_label.py 400 250 R01 --confirm-key click-away --away-x 50 --away-y 50
+Uso (como funcion; build_topology usa rename_label dentro de su flujo):
+    rename_device_label(400, 250, "R01", category="router")                 # dry-run
+    rename_device_label(400, 250, "R01", category="router", dry_run=False)
+    rename_device_label(400, 250, "R01", offset_y=45, dry_run=False)
+    rename_device_label(400, 250, "R01", confirm_key="click-away", away_xy=(50, 50),
+                        dry_run=False)
 
-Posicion (obligatoria):
-    X Y         posicion del ICONO del dispositivo (la misma que uso build.py
-                para colocarlo; no la del label -- el offset se suma aqui).
-
-Opciones:
-    --category {router,switch,end_device}
-                Categoria del dispositivo; decide el offset por defecto
-                (def. end_device). Los tres arrancan en 38px (valor de
-                partida sin calibrar; ver LABEL_OFFSET_Y mas abajo).
-    --offset-y N     Fuerza el offset vertical en px (ignora --category).
-    --confirm-key K  Tecla para confirmar el nombre nuevo (def. 'enter').
-                     Usa 'click-away' para confirmar con un clic en un punto
-                     vacio del lienzo en vez de una tecla.
-    --away-x N --away-y N   Punto de "click-away" (def.: esquina superior
-                     izquierda del canvas calibrado + 8px de margen, el mismo
-                     truco que usa build.py para las notas encadenadas).
-    --dry-run        Imprime el plan sin mover el mouse.
-    --pause SEG      Pausa entre pasos (def. 0.4).
-    --countdown N    Cuenta regresiva antes de empezar (def. 5).
+Parametros:
+    x, y          posicion del ICONO del dispositivo (la misma que uso build_topology para
+                  colocarlo; no la del label -- el offset se suma aqui dentro).
+    category      router | switch | end_device: decide el offset por defecto (los tres
+                  arrancan en 38px, valor de partida sin calibrar; ver LABEL_OFFSET_Y).
+    offset_y      fuerza el offset vertical en px (ignora category).
+    confirm_key   tecla para confirmar (def. 'enter'), o 'click-away' para confirmar con un
+                  clic en un punto vacio del lienzo (away_xy; def.: esquina superior
+                  izquierda del canvas calibrado + 8px, el mismo truco que usa
+                  build_topology para las notas encadenadas).
+    dry_run=True  (por defecto) solo muestra el plan.
 
 Seguridad: failsafe de pyautogui (mouse a la esquina superior izquierda =
 aborta), pausa configurable entre pasos.
@@ -89,9 +80,9 @@ CATEGORIES = tuple(LABEL_OFFSET_Y)
 def rename_label(x, y, new_name, category="end_device", *, pause=0.4,
                  offset_y=None, confirm_key="enter", away_xy=None):
     """Renombra el label de UN dispositivo ya colocado en (x, y). Unica
-    fuente de la secuencia de rename (no duplicar esta logica en build.py).
+    fuente de la secuencia de rename (no duplicar esta logica en build).
 
-    (x, y) es la posicion del ICONO (la misma que uso build.py al colocarlo),
+    (x, y) es la posicion del ICONO (la misma que uso build al colocarlo),
     no la del label -- el offset vertical se suma aca adentro.
 
     confirm_key: nombre de tecla para pyautogui.press() (ej. 'enter', 'tab'),

@@ -2,7 +2,7 @@
 core.log - salida de mensajes desacoplada de la consola.
 
 core/ no usa print(): llama a emit(msg). Quien lo use registra el destino con
-set_sink(fn) (el panel, un archivo de log, o print en una consola de pruebas).
+set_sink(fn) (el panel o un archivo de log).
 Sin destino registrado los mensajes se descartan.
 """
 

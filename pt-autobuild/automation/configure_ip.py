@@ -4,11 +4,11 @@ configure_ip.py - Flujo COMPLETO de configuracion IP de un dispositivo.
     doble clic en el dispositivo -> Desktop -> IP Configuration -> Static
     -> escribir IPv4 / Mascara / Gateway -> cerrar la ventana
 
-Con --skip-open asume que la ventana YA esta abierta y en 'Desktop > IP
+Con skip_open=True asume que la ventana YA esta abierta y en 'Desktop > IP
 Configuration' (modo depuracion): solo escribe los 3 campos y no cierra.
 
 La posicion del dispositivo NO se pasa a mano: se lee de topologia_actual.json
-(el registro que genera build.py) buscando el dispositivo por su nombre.
+(el registro que genera build_topology) buscando el dispositivo por su nombre.
 
 Puntos a calibrar (posicion fija en pantalla; la ventana emergente de Packet
 Tracer abre siempre en el mismo sitio mientras no la muevas ni cambies la
@@ -17,7 +17,7 @@ resolucion). Todos en data/ip_config_coords.json:
     desktop_tab           pestana "Desktop" dentro de la ventana
     ip_configuration_item icono "IP Configuration" ("skip" si aparece directo)
     static_radio          radio button "Static"
-    close_button          boton X de la ventana (lo reutiliza configure_router.py)
+    close_button          boton X de la ventana (lo reutiliza configure_router)
     ipv4_address / subnet_mask / default_gateway   campos de texto
 
 Uso (desde el panel, pestana Configurar; o como funciones):

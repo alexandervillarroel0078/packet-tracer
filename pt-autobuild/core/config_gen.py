@@ -7,10 +7,8 @@ topologia ya este colocada (no lee topologia_actual.json). Reutiliza
 build.parse_grouped() tal cual -- no duplica la logica de parseo de
 ROUTERS/SWITCHES/RED/ENLACES/modelos.
 
-Nota: build.py exige pyautogui instalado al importarse (aunque
-parse_grouped() en si no lo usa para nada); como este modulo importa desde
-build, hereda esa dependencia transitiva. El proyecto ya la trae como
-requisito (requirements.txt), asi que en la practica no es un problema.
+Nota: el parseo vive en core/topology.py (sin pyautogui), asi que este modulo no
+necesita pantalla ni dependencias de automatizacion.
 
 Dos modos, MUTUAMENTE EXCLUYENTES (nunca se mezclan en el mismo resultado):
     MODE_STATIC ("static"): bloque de interfaces + 'ip route' calculados
