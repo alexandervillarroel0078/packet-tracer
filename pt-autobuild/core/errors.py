@@ -23,3 +23,7 @@ class TopologyFileError(PTError):
 
 class CancelledError(PTError):
     pass
+
+
+class AutoCalibrateError(PTError):
+    """Fallo de la autocalibracion con IA (configuracion, red, API, respuesta invalida)."""

@@ -21,7 +21,7 @@ Requisitos: Windows 10/11 y Python 3.10 o superior.
 3. **Doble clic en `iniciar.bat`.** Abre el panel (usa `.venv` o `venv` si existen; si no, el
    Python del sistema).
 
-Dependencias: `pyautogui`, `opencv-python`, `Pillow`, `python-dotenv`. El panel usa `tkinter`,
+Dependencias: `pyautogui`, `opencv-python`, `Pillow`. El panel usa `tkinter`,
 que viene con Python en Windows.
 
 ## Primeros pasos (uso seguro)
@@ -43,21 +43,42 @@ Seguridad mientras actúa:
   abortar al instante.
 - Antes de construir de verdad se comprueba la calibración; si falta algo, no se mueve nada.
 
-## Ajustes: API key (opcional)
+## Ajustes: proveedor de IA y API key (opcional)
 
-Solo hace falta para la **autocalibración con IA**. En la pestaña **Ajustes**:
+Solo hace falta para la **autocalibración con IA**, que puede usar **OpenAI** o **Anthropic**;
+cambias de uno a otro desde el panel, sin tocar código. En la pestaña **Ajustes**:
 
-1. Pega tu `ANTHROPIC_API_KEY` (el campo está oculto; **Mostrar** la revela) y el modelo
-   (por defecto `claude-sonnet-5-5`).
-2. **Guardar** la escribe en `.env` (ignorado por git). La clave nunca se imprime en el log.
-3. **Probar conexión** hace una petición mínima y te dice si la clave, el modelo y la red están
-   bien.
+1. Elige el **proveedor** (por defecto **OpenAI**).
+2. Pega su **API key** (el campo está oculto; **Mostrar** la revela) y el **modelo**. Cada
+   proveedor recuerda su propia clave y modelo.
+3. **Guardar** lo escribe en `.env` (ignorado por git). Ninguna clave se imprime nunca en el
+   log, en los mensajes de error ni en las excepciones.
+4. **Probar conexión** hace una petición mínima con el proveedor elegido y te dice si la clave,
+   el modelo y la red están bien. El log indica qué proveedor y modelo se usaron (sin la clave).
+
+| Proveedor | Variables de `.env` | Dónde sacar la clave | Modelo |
+|---|---|---|---|
+| **OpenAI** | `OPENAI_API_KEY`, `OPENAI_MODEL` | https://platform.openai.com/api-keys | **Lo eliges tú** (no hay uno por defecto): debe ser un modelo con visión. |
+| **Anthropic** | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | https://console.anthropic.com/settings/keys | Por defecto `claude-sonnet-5-5`. |
+
+El proveedor activo es `AI_PROVIDER=openai` o `AI_PROVIDER=anthropic` (el selector de Ajustes lo
+escribe). También puedes editar `.env` a mano; hay una plantilla en `.env.example`.
+
+Si la API falla, el panel lo explica: clave inválida, sin saldo o cuota, modelo inexistente o sin
+visión, límite de uso, sin red o timeout.
+
+> **Cambiar de proveedor o de modelo invalida la caché** de la autocalibración: la siguiente
+> pasada vuelve a llamar a la IA. Si cambias de proveedor, **comprueba** lo detectado con
+> **Solo mostrar** antes de guardar: cada modelo puede equivocarse de forma distinta. Si un modelo
+> devuelve coordenadas normalizadas (0-1) o fuera de la imagen, se **rechazan** con un aviso en
+> el log en vez de guardarse.
 
 También verás el **informe de DPI**: debe decir que `pyautogui` y la resolución física
 coinciden. Si no, los clics se desviarán.
 
-> Privacidad: la autocalibración envía a la API de Anthropic una **captura de la ventana de
-> Packet Tracer** (de toda la pantalla si no la encuentra). Ciérrales lo que no quieras enviar.
+> Privacidad: la autocalibración envía al proveedor activo (OpenAI o Anthropic) una **captura de
+> la ventana de Packet Tracer** (de toda la pantalla si no la encuentra). Cierra lo que no quieras
+> enviar.
 
 ## Las pestañas
 
@@ -103,7 +124,7 @@ Además:
   (los clics pasan a Packet Tracer).
 
 ### Ajustes
-API key, modelo, prueba de conexión e informe de DPI (ver arriba).
+Proveedor de IA, API key, modelo, prueba de conexión e informe de DPI (ver arriba).
 
 ## Qué dejar abierto para cada calibración
 
@@ -117,8 +138,8 @@ tocar y te dice qué abrir.
 | **ip** (`ip_config_coords.json`) | `desktop_tab`, `close_button`, `ip_configuration_item`, `static_radio` y los 3 campos | Doble clic en un PC (ventana abierta, sin moverla). **Pasada 1:** pestaña *Desktop* (iconos). **Pasada 2:** *Desktop → IP Configuration* con *Static* marcado. Son excluyentes: una pasada cada vez. |
 
 `filtered_result` se omite si hay un menú o ventana abierta; calíbralo en una pasada **main**
-aparte. Con la caché, si la resolución, la escala DPI y la posición de la ventana no cambiaron
-y los recortes siguen en su sitio, **no se llama a la API**.
+aparte. Con la caché, si la resolución, la escala DPI, la posición de la ventana, el **proveedor y el
+modelo** no cambiaron y los recortes siguen en su sitio, **no se llama a la API**.
 
 La verificación (`matchTemplate`) confirma que el punto cae sobre algo reconocible y estable;
 **no** que la IA haya elegido el elemento correcto. Revisa con **Solo mostrar** o con el overlay.
@@ -184,7 +205,7 @@ tests/                        pytest
   foco o aparece un diálogo, los clics caerán donde no deben (usa **DETENER** o el failsafe).
 - El renombrado de etiquetas está confirmado a mano solo para routers (offset de 38 px);
   switches y PCs usan el mismo valor sin confirmar.
-- La autocalibración con IA necesita red y una API key, envía capturas a la API y puede equivocarse
+- La autocalibración con IA necesita red y una API key (OpenAI o Anthropic), envía capturas al proveedor y puede equivocarse
   de elemento; la verificación visual lo mitiga, no lo elimina.
 - Solo se escribe ASCII de forma fiable (acentos y eñes pueden salir mal al teclear).
 
@@ -192,7 +213,7 @@ tests/                        pytest
 
 - **Un error inesperado** se resume en el log del panel; el detalle técnico queda en
   `data/panel_errors.log`.
-- **"Falta la API key"**: configúrala en Ajustes.
+- **"Falta la API key"** (o el modelo): configúralos en Ajustes para el proveedor activo.
 - **Los clics caen desfasados**: mira el informe de DPI en Ajustes y mantén la misma escala de
   Windows que al calibrar.
 

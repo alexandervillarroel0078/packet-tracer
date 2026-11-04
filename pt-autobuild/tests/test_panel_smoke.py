@@ -191,3 +191,30 @@ def test_cerrar_destruye_la_ventana(app):
     with pytest.raises(tk.TclError):
         app.root.winfo_exists() and app.root.update()
         app.root.title()
+
+
+def test_ajustes_selector_de_proveedor_guarda_y_conserva_cada_clave(app, monkeypatch):
+    from core import paths, settings
+    a = app.views["Ajustes"]
+    assert a.selected() == "openai"                              # por defecto
+    assert "OPENAI_API_KEY" in a.key_label.cget("text")
+    a.key_var.set("sk-proj-clave-openai-1111")
+    a.model_var.set("modelo-vision-x")
+    a.provider_var.set("Anthropic")
+    a._on_provider()                                             # cambia de proveedor
+    assert a.selected() == "anthropic" and "ANTHROPIC_API_KEY" in a.key_label.cget("text")
+    assert a.key_var.get() == "" and a.model_var.get() == "claude-sonnet-5-5"
+    a.key_var.set("sk-ant-api03-clave-anthropic-2222")
+    app.guard(a._save)()                                         # guarda el proveedor mostrado
+    a.provider_var.set("OpenAI")
+    a._on_provider()
+    assert a.key_var.get() == "sk-proj-clave-openai-1111"        # no se perdio lo escrito
+    app.guard(a._save)()
+    s = settings.read_settings()
+    assert s["provider"] == "openai"
+    assert s["providers"]["anthropic"]["api_key"] == "sk-ant-api03-clave-anthropic-2222"
+    assert s["providers"]["openai"]["model"] == "modelo-vision-x"
+    log = log_text(app)
+    assert "OpenAI" in log and "Anthropic" in log
+    assert "clave-openai-1111" not in log and "clave-anthropic-2222" not in log
+    assert os.path.exists(paths.ENV_PATH)

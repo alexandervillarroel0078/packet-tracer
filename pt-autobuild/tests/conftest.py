@@ -67,3 +67,12 @@ def isolated_data_dir(tmp_path, monkeypatch):
             if getattr(mod, k, None) == originals[k]:
                 monkeypatch.setattr(mod, k, v)
     yield mapping
+
+
+@pytest.fixture(autouse=True)
+def isolated_ai_env(monkeypatch):
+    """Ninguna clave/proveedor del entorno real (ni lo que guarde un test) se filtra entre tests."""
+    for var in ("AI_PROVIDER", "OPENAI_API_KEY", "OPENAI_MODEL",
+                "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"):
+        monkeypatch.setenv(var, "")      # vacio = sin definir; monkeypatch lo restaura al salir
+    yield

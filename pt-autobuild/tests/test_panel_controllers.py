@@ -531,7 +531,7 @@ def test_ajustes_guardar_y_cargar_sin_filtrar_la_key(shared, isolated_data_dir, 
         f.write("# comentario\nOTRA=1\nANTHROPIC_MODEL=viejo\n")
     c = AjustesController(shared)
     secret = "sk-ant-api03-SECRETO-1234567890"
-    msg = c.save(secret, "claude-sonnet-5-5")
+    msg = c.save(secret, "claude-sonnet-5-5", "anthropic")
     assert secret not in msg and "7890" in msg
     text = open(paths.ENV_PATH, encoding="utf-8").read()
     assert "OTRA=1" in text and "# comentario" in text
@@ -560,7 +560,7 @@ def test_ajustes_probar_conexion_no_registra_la_key(shared, isolated_data_dir, m
     secret = "sk-ant-api03-OTRO-SECRETO-777"
     seen = {}
 
-    def fake(key, model):
+    def fake(key, model, provider=None):
         seen["args"] = (key, model)
         return "Conexion correcta con la API (modelo m)."
 
@@ -573,7 +573,7 @@ def test_ajustes_probar_conexion_no_registra_la_key(shared, isolated_data_dir, m
 def test_ajustes_error_de_conexion_se_muestra_sin_la_key(shared, isolated_data_dir, monkeypatch):
     secret = "sk-ant-api03-TERCERA-555"
 
-    def fake(key, model):
+    def fake(key, model, provider=None):
         raise ac.AutoCalibrateError("la API rechazo la clave (HTTP 401).")
 
     monkeypatch.setattr(ac, "test_connection", fake)
@@ -588,17 +588,20 @@ def test_ajustes_informe_dpi(shared):
 
 
 def test_test_connection_sin_red_o_clave(monkeypatch):
+    from core import ai_providers
     with pytest.raises(ac.AutoCalibrateError):
-        ac.test_connection("", "m")
+        ac.test_connection("", "m", provider="anthropic")
 
-    def fail(key, model, content, max_tokens=1024):
+    def fail(cfg, prompt, image_b64=None, max_tokens=1024, **kw):
         raise ac.AutoCalibrateError("sin conexion")
 
-    monkeypatch.setattr(ac, "call_api", fail)
+    monkeypatch.setattr(ai_providers, "send", fail)
     with pytest.raises(ac.AutoCalibrateError):
-        ac.test_connection("k", "m")
-    monkeypatch.setattr(ac, "call_api", lambda *a, **k: "ok")
-    assert "Conexion correcta" in ac.test_connection("k", "")
+        ac.test_connection("k", "m", provider="anthropic")
+    monkeypatch.setattr(ai_providers, "send", lambda *a, **k: "{}")
+    assert "Conexion correcta" in ac.test_connection("k", "", provider="anthropic")   # modelo por defecto
+    with pytest.raises(ac.AutoCalibrateError):                                         # OpenAI: sin modelo
+        ac.test_connection("k", "", provider="openai")
 
 
 # =====================================================================

@@ -34,14 +34,12 @@ import sys
 import tempfile
 from typing import NamedTuple
 
-from core.errors import PTError
+from core import ai_providers, settings
+from core.ai_providers import AIConfig
+from core.errors import AutoCalibrateError
 from core.log import emit
-from core.paths import (CABLE_COORDS_PATH, COORDS_PATH, ENV_PATH, IP_CONFIG_COORDS_PATH,
+from core.paths import (CABLE_COORDS_PATH, COORDS_PATH, IP_CONFIG_COORDS_PATH,
                         REFERENCE_IMAGES_DIR)
-
-API_URL = "https://api.anthropic.com/v1/messages"
-API_VERSION = "2023-06-01"
-DEFAULT_MODEL = "claude-sonnet-5-5"
 
 META_KEY = "autocalibrate"
 META_VERSION = 1
@@ -123,10 +121,6 @@ MENU_COL_TOL = 20
 MENU_MAX_OFFSET = 600
 
 
-class AutoCalibrateError(PTError):
-    """Error esperable (config, red, API, respuesta invalida) con mensaje claro."""
-
-
 # =====================================================================
 # LOGICA PURA (testeada en tests/test_autocalibrate.py)
 # =====================================================================
@@ -194,6 +188,7 @@ def _validate_points(raw, image_size, names, min_canvas=100):
     """Valida {nombre: {x,y}|[x,y]|null}. -> (puntos, avisos). Ver parse_ai_response."""
     w, h = image_size
     points, warns = {}, []
+    normalized = 0
     for name in names:
         v = raw.get(name) if isinstance(raw, dict) else None
         if v is None:
@@ -207,11 +202,20 @@ def _validate_points(raw, image_size, names, min_canvas=100):
             warns.append(f"{name}: formato invalido ({v!r})")
             continue
         x, y = float(v[0]), float(v[1])
+        if 0 <= x <= 1 and 0 <= y <= 1:
+            normalized += 1
+            warns.append(f"{name}: ({x:g}, {y:g}) parece una coordenada NORMALIZADA (0-1); "
+                         f"se esperaban pixeles de la imagen {w}x{h}: rechazada")
+            continue
         if not (0 <= x < w and 0 <= y < h):
-            warns.append(f"{name}: ({x:g}, {y:g}) fuera de la imagen {w}x{h}")
+            warns.append(f"{name}: ({x:g}, {y:g}) fuera de la imagen {w}x{h}: rechazada")
             continue
         points[name] = (int(round(x)), int(round(y)))
 
+    if normalized:
+        warns.append(f"coordenadas normalizadas: el modelo devolvio {normalized} punto(s) en "
+                     "escala 0-1 en vez de pixeles; no se guardaron. Prueba con otro modelo "
+                     "con vision.")
     tl, br = points.get("canvas_top_left"), points.get("canvas_bottom_right")
     if tl and br and (br[0] - tl[0] < min_canvas or br[1] - tl[1] < min_canvas):
         warns.append(f"lienzo incoherente (esquinas {tl} / {br}): descartado")
@@ -426,13 +430,18 @@ def cache_decision(meta, env, required=REQUIRED, soft=(), have=()):
     (antes de comprobar visualmente los recortes). Devuelve (ok, motivo).
 
     meta      seccion "autocalibrate" guardada (o None)
-    env       {"resolution": [w,h], "dpi_scale": float, "window": [l,t,w,h]}
+    env       {"resolution": [w,h], "dpi_scale": float, "window": [l,t,w,h]} y, si se
+              indican, "provider" y "model" de IA: al cambiarlos hay que recalibrar
     required  elementos que deben estar verificados ("ok") con recorte
     soft      elementos que dependen de un menu/ventana: basta con que tengan valor
               (nombres en `have`) o un recorte guardado; no obligan a llamar a la API
     """
     if not isinstance(meta, dict) or meta.get("version") != META_VERSION:
         return False, "no hay autocalibracion previa"
+    if "provider" in env and (meta.get("provider"), meta.get("model")) != (
+            env["provider"], env.get("model")):
+        return False, (f"cambio el proveedor/modelo de IA ({meta.get('provider')}/"
+                       f"{meta.get('model')} -> {env['provider']}/{env.get('model')})")
     if list(meta.get("resolution") or []) != list(env["resolution"]):
         return False, f"cambio la resolucion ({meta.get('resolution')} -> {env['resolution']})"
     old_dpi = meta.get("dpi_scale")
@@ -458,26 +467,33 @@ def cache_decision(meta, env, required=REQUIRED, soft=(), have=()):
 # ENTORNO: .env, captura, ventana, DPI
 # =====================================================================
 def load_config():
-    """Carga .env y devuelve (api_key, model). Nunca se imprime la key."""
-    try:
-        from dotenv import load_dotenv
-    except ImportError as e:
+    """
+    Proveedor activo (AI_PROVIDER), su clave y su modelo, desde .env / entorno.
+    -> AIConfig(provider, key, model). Nunca se imprime la key.
+    """
+    cfg = settings.read_settings()
+    provider = cfg["provider"]
+    kv, mv = ai_providers.KEY_VARS[provider], ai_providers.MODEL_VARS[provider]
+    if not cfg["api_key"]:
         raise AutoCalibrateError(
-            "falta python-dotenv. Instala:  pip install -r requirements.txt") from e
-    load_dotenv(ENV_PATH)
-    key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
-    if not key:
+            f"falta {kv} ({ai_providers.label(provider)}). Configurala en la pestana Ajustes "
+            f"(o en .env). Puedes obtenerla en {ai_providers.KEY_URLS[provider]}")
+    if not cfg["model"]:
         raise AutoCalibrateError(
-            "falta ANTHROPIC_API_KEY. Copia .env.example a .env y rellena la clave "
-            f"({ENV_PATH}).")
-    return key, (os.environ.get("ANTHROPIC_MODEL") or "").strip() or DEFAULT_MODEL
+            f"falta {mv}: indica un modelo con vision de {ai_providers.label(provider)} en la "
+            "pestana Ajustes (o en .env).")
+    return AIConfig(provider, cfg["api_key"], cfg["model"])
 
 
-def redact(text, key):
-    """Quita la API key de cualquier texto antes de mostrarlo."""
-    if key:
-        text = text.replace(key, "***")
-    return re.sub(r"sk-ant-[A-Za-z0-9_\-]+", "sk-ant-***", text)
+def current_ai():
+    """(proveedor, modelo) activos, SIN exigir la clave (para la clave de cache)."""
+    cfg = settings.read_settings()
+    return cfg["provider"], cfg["model"]
+
+
+def redact(text, *keys):
+    """Quita de `text` las claves dadas y todo lo que parezca una clave (OpenAI o Anthropic)."""
+    return ai_providers.redact(text, *keys)
 
 
 def get_dpi_scale():
@@ -554,73 +570,28 @@ def png_b64(img, size):
 # =====================================================================
 # API de Anthropic
 # =====================================================================
-def call_vision_api(key, model, img_b64, prompt):
-    """Mensaje con imagen. Devuelve el texto de la respuesta. Nunca expone la key."""
-    return call_api(key, model, [
-        {"type": "image", "source": {"type": "base64", "media_type": "image/png",
-                                     "data": img_b64}},
-        {"type": "text", "text": prompt},
-    ], max_tokens=1024)
+def call_vision_api(cfg, img_b64, prompt):
+    """Peticion con imagen al proveedor de `cfg`. Devuelve el texto (el JSON pedido)."""
+    return ai_providers.send(cfg, prompt, image_b64=img_b64, max_tokens=1024)
 
 
-def test_connection(key, model):
+def test_connection(key, model, provider=None):
     """
-    Comprueba clave, modelo y red con una peticion minima (solo texto, ~10 tokens).
-    Devuelve un mensaje de exito; lanza AutoCalibrateError con una causa clara si falla.
+    Comprueba clave, modelo y red del proveedor (def.: el activo) con una peticion minima
+    de solo texto. Devuelve un mensaje de exito; lanza AutoCalibrateError con causa clara.
     """
+    provider = ai_providers.normalize_provider(provider or settings.active_provider())
+    name = ai_providers.label(provider)
     if not (key or "").strip():
-        raise AutoCalibrateError("falta la API key.")
-    call_api(key.strip(), (model or "").strip() or DEFAULT_MODEL,
-             [{"type": "text", "text": "Responde solo con la palabra: ok"}], max_tokens=8)
-    return f"Conexion correcta con la API (modelo {(model or '').strip() or DEFAULT_MODEL})."
-
-
-def call_api(key, model, content, max_tokens=1024):
-    """POST a /v1/messages con `content` (lista de bloques). Nunca expone la key."""
-    import urllib.error
-    import urllib.request
-
-    body = json.dumps({
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": content}],
-    }).encode("utf-8")
-    req = urllib.request.Request(API_URL, data=body, method="POST", headers={
-        "content-type": "application/json",
-        "x-api-key": key,
-        "anthropic-version": API_VERSION,
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        detail = ""
-        try:
-            detail = json.loads(e.read().decode("utf-8")).get("error", {}).get("message", "")
-        except Exception:  # noqa: BLE001
-            pass
-        if e.code in (401, 403):
-            raise AutoCalibrateError(
-                "la API rechazo la clave (HTTP %d). Revisa ANTHROPIC_API_KEY en .env." % e.code)
-        if e.code == 404:
-            raise AutoCalibrateError(
-                f"modelo no encontrado: '{model}'. Revisa ANTHROPIC_MODEL en .env.")
-        if e.code == 429:
-            raise AutoCalibrateError("limite de uso de la API (HTTP 429). Reintenta en unos minutos.")
-        raise AutoCalibrateError(redact(f"error de la API (HTTP {e.code}): {detail}", key))
-    except urllib.error.URLError as e:
+        raise AutoCalibrateError(f"falta la API key de {name}.")
+    model = (model or "").strip() or ai_providers.DEFAULT_MODELS[provider]
+    if not model:
         raise AutoCalibrateError(
-            f"sin conexion con la API de Anthropic ({redact(str(e.reason), key)}). "
-            "Comprueba tu red / proxy.")
-    except TimeoutError:
-        raise AutoCalibrateError("la API no respondio a tiempo (timeout). Reintenta.")
-    except (OSError, json.JSONDecodeError) as e:
-        raise AutoCalibrateError(redact(f"respuesta de red invalida: {e}", key))
-
-    texts = [b.get("text", "") for b in payload.get("content", []) if b.get("type") == "text"]
-    if not texts:
-        raise AutoCalibrateError("la API devolvio una respuesta sin texto")
-    return "\n".join(texts)
+            f"falta el modelo de {name}: indica un modelo con vision.")
+    cfg = AIConfig(provider, key.strip(), model)
+    ai_providers.send(cfg, 'Responde unicamente con este objeto JSON: {"ok": true}',
+                      max_tokens=16)
+    return f"Conexion correcta con {name} (modelo {model})."
 
 
 def build_prompt(names, image_size, descs=None):
@@ -662,16 +633,16 @@ def build_multi_prompt(elements, image_size):
     )
 
 
-def ask_points(key, model, img, sent_size, names, descs=None):
+def ask_points(cfg, img, sent_size, names, descs=None):
     """Pregunta a la IA por `names` sobre `img` (enviada a sent_size). -> (puntos, avisos)."""
-    text = call_vision_api(key, model, png_b64(img, sent_size),
+    text = call_vision_api(cfg, png_b64(img, sent_size),
                            build_prompt(names, sent_size, descs))
     return parse_ai_response(text, sent_size, names)
 
 
-def ask_multi(key, model, img, sent_size, elements):
+def ask_multi(cfg, img, sent_size, elements):
     """Una sola llamada: estados de UI + puntos. -> (puntos por ai_name, estados, avisos)."""
-    text = call_vision_api(key, model, png_b64(img, sent_size),
+    text = call_vision_api(cfg, png_b64(img, sent_size),
                            build_multi_prompt(elements, sent_size))
     states = list(dict.fromkeys(e.state for e in elements))
     return parse_multi_response(text, sent_size, [e.ask for e in elements], states)
@@ -728,13 +699,12 @@ def _zoom_rect(point, screen_size):
     return [l, t, w, h]
 
 
-def verify_and_refine(el, point, shot, ppu, screen_size, creds, dry_run, log=emit):
+def verify_and_refine(el, point, shot, ppu, screen_size, cfg, dry_run, log=emit):
     """
     Verifica `point` (pantalla) del Element `el`, con hasta MAX_RETRIES reintentos de
     refinamiento por IA sobre un recorte ampliado. `shot`/`ppu` es la captura de la que
     se corta el recorte. Devuelve el dict de estado del elemento.
     """
-    key, model = creds
     attempts = 0
     while True:
         tmpl, corner, offset = make_template(shot, (point[0] * ppu, point[1] * ppu))
@@ -754,7 +724,7 @@ def verify_and_refine(el, point, shot, ppu, screen_size, creds, dry_run, log=emi
         rect = _zoom_rect(point, screen_size)
         crop, crop_px = crop_units(fresh, ppu2, rect)
         sent = (crop_px[0] * 2, crop_px[1] * 2)  # ampliar x2 para que la IA vea detalle
-        pts, _warns = ask_points(key, model, crop, sent, (el.ask,), {el.ask: el.desc})
+        pts, _warns = ask_points(cfg, crop, sent, (el.ask,), {el.ask: el.desc})
         if el.ask not in pts:
             return {"status": "manual", "point": list(point), "confidence": round(conf, 3),
                     "reason": "la IA no pudo afinar la posicion", "attempts": attempts}
@@ -800,7 +770,7 @@ STATUS_LABEL = {"ok": "OK", "manual": "requiere manual", "unverified": "sin veri
 # =====================================================================
 # Orquestacion
 # =====================================================================
-def _calibrate_filtered(el, results, creds, env, test_model, dry_run, log):
+def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log):
     """
     filtered_result automatico: clic en search_field, escribe un modelo de prueba, espera,
     nueva captura y pide a la IA SOLO el primer resultado filtrado. Siempre limpia el buscador.
@@ -820,7 +790,6 @@ def _calibrate_filtered(el, results, creds, env, test_model, dry_run, log):
         pyautogui.hotkey("ctrl", "a")
         pyautogui.press("delete")
 
-    key, model = creds
     log(f"  filtered_result: escribiendo '{test_model}' en el buscador...")
     try:
         clear_box()
@@ -831,13 +800,13 @@ def _calibrate_filtered(el, results, creds, env, test_model, dry_run, log):
         sent = compute_send_size(*crop_px)
         desc = (f"centro del PRIMER dispositivo de los resultados filtrados en la paleta "
                 f"inferior tras escribir '{test_model}' en el buscador")
-        pts, _w = ask_points(key, model, crop, sent, (el.ask,), {el.ask: desc})
+        pts, _w = ask_points(cfg, crop, sent, (el.ask,), {el.ask: desc})
         if el.ask not in pts:
             return {"status": "manual", "reason": "la IA no vio ningun resultado filtrado"}
         upp = compute_units_per_px(crop_px, sent, ppu)
         pt = list(image_to_screen(pts[el.ask][0], pts[el.ask][1], env["window"][:2], upp))
         return verify_and_refine(el._replace(desc=desc), pt, shot, ppu, env["resolution"],
-                                 creds, dry_run, log)
+                                 cfg, dry_run, log)
     finally:
         clear_box()  # deja el buscador vacio pase lo que pase
         log("  filtered_result: buscador limpiado.")
@@ -875,6 +844,8 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     if win_warn:
         log(f"  [!] {win_warn}")
     shot, ppu = capture()
+    provider, model_id = current_ai()
+    env = dict(env, provider=provider, model=model_id)   # la cache depende de proveedor+modelo
 
     # --- cache: sin API si nada cambio y los recortes siguen en su sitio ---------------
     why = "--force"
@@ -900,16 +871,20 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
             return 0
     log(f"  Cache no aplicable: {why}")
 
-    key, model = load_config()
-    creds = (key, model)
-    log(f"  Modelo: {model}")
+    cfg = load_config()
+    creds = cfg
+    log(f"  Proveedor: {ai_providers.label(cfg.provider)}   Modelo: {cfg.model}")
 
     # --- una llamada: estados de UI + puntos --------------------------------------------
     ai_els = [e for e in els if e.name != "filtered_result"]
     crop, crop_px = crop_units(shot, ppu, env["window"])
     sent = compute_send_size(*crop_px)
     log(f"  Enviando captura {crop_px[0]}x{crop_px[1]} (redimensionada a {sent[0]}x{sent[1]})...")
-    pts, states, warns = ask_multi(key, model, crop, sent, ai_els)
+    pts, states, warns = ask_multi(cfg, crop, sent, ai_els)
+    reasons = {w.split(':')[0]: w for w in warns}
+    for w in warns:
+        if 'rechazada' in w or w.startswith('coordenadas normalizadas'):
+            log(f"  [!] {w}")
     upp = compute_units_per_px(crop_px, sent, ppu)
     log("  Estados de UI detectados:")
     for s in dict.fromkeys(e.state for e in ai_els):
@@ -925,7 +900,8 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
         if not states.get(e.state):
             continue  # no se adivina: se avisa arriba
         if e.ask not in pts:
-            results[e.name] = {"status": "manual", "reason": "no detectado por la IA"}
+            results[e.name] = {"status": "manual",
+                               "reason": reasons.get(e.ask, "no detectado por la IA")}
             continue
         sp_ = list(image_to_screen(pts[e.ask][0], pts[e.ask][1], env["window"][:2], upp))
         results[e.name] = verify_and_refine(e, sp_, shot, ppu, env["resolution"],
@@ -997,7 +973,7 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
                 unresolved.append(e)
         data[META_KEY] = {"version": META_VERSION, "resolution": env["resolution"],
                           "dpi_scale": env["dpi_scale"], "window": env["window"],
-                          "model": model, "elements": records}
+                          "provider": cfg.provider, "model": cfg.model, "elements": records}
         outputs[f] = data
 
     log("")

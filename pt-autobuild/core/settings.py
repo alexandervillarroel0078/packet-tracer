@@ -1,20 +1,26 @@
 """
-core.settings - lectura/escritura de .env (API key y modelo de la autocalibracion).
+core.settings - lectura/escritura de .env: proveedor de IA y, por proveedor, clave y modelo.
 
-Nunca imprime ni registra la key: ni los mensajes de error la incluyen. La escritura es
-atomica y conserva el resto de lineas del .env. Tambien actualiza os.environ para que el
-cambio valga en el proceso actual sin reiniciar.
+Variables:
+    AI_PROVIDER=openai | anthropic        (por defecto openai)
+    OPENAI_API_KEY / OPENAI_MODEL         (OpenAI no trae modelo por defecto: se configura)
+    ANTHROPIC_API_KEY / ANTHROPIC_MODEL
+
+Nunca imprime ni registra una clave: ni los mensajes de error la incluyen. La escritura es
+atomica y conserva el resto de lineas del .env (tambien las del otro proveedor). Tambien
+actualiza os.environ para que el cambio valga en el proceso actual sin reiniciar.
 """
 
 import os
 import re
 
 from core import paths
+from core.ai_providers import (DEFAULT_MODELS, DEFAULT_PROVIDER, KEY_VARS, LABELS, MODEL_VARS,
+                               PROVIDERS, normalize_provider)
 from core.errors import PTError
 
-KEY_VAR = "ANTHROPIC_API_KEY"
-MODEL_VAR = "ANTHROPIC_MODEL"
-DEFAULT_MODEL = "claude-sonnet-5-5"
+PROVIDER_VAR = "AI_PROVIDER"
+DEFAULT_MODEL = DEFAULT_MODELS["anthropic"]      # compatibilidad con codigo anterior
 
 _LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$")
 
@@ -37,8 +43,7 @@ def parse_env(text):
     return out
 
 
-def read_settings():
-    """{"api_key", "model", "has_key"} desde .env (o, si falta, del entorno)."""
+def _read_values():
     values = {}
     path = paths.ENV_PATH
     if os.path.exists(path):
@@ -47,9 +52,35 @@ def read_settings():
                 values = parse_env(f.read())
         except OSError:
             values = {}
-    key = (values.get(KEY_VAR) or os.environ.get(KEY_VAR) or "").strip()
-    model = (values.get(MODEL_VAR) or os.environ.get(MODEL_VAR) or "").strip() or DEFAULT_MODEL
-    return {"api_key": key, "model": model, "has_key": bool(key)}
+    return values
+
+
+def _get(values, var):
+    return (values.get(var) or os.environ.get(var) or "").strip()
+
+
+def active_provider(values=None):
+    """Proveedor activo (AI_PROVIDER); si falta o no es valido, el por defecto."""
+    values = _read_values() if values is None else values
+    p = _get(values, PROVIDER_VAR).lower()
+    return p if p in PROVIDERS else DEFAULT_PROVIDER
+
+
+def read_settings():
+    """
+    {"provider", "providers": {nombre: {"api_key","model","has_key"}}, y, para el proveedor
+    ACTIVO, los atajos "api_key", "model", "has_key"}.
+    """
+    values = _read_values()
+    provider = active_provider(values)
+    per = {}
+    for p in PROVIDERS:
+        key = _get(values, KEY_VARS[p])
+        model = _get(values, MODEL_VARS[p]) or DEFAULT_MODELS[p]
+        per[p] = {"api_key": key, "model": model, "has_key": bool(key)}
+    out = {"provider": provider, "providers": per}
+    out.update(per[provider])
+    return out
 
 
 def mask_key(key):
@@ -60,21 +91,29 @@ def mask_key(key):
     return key[:7] + "..." + key[-4:]
 
 
-def validate(api_key, model):
+def validate(api_key, model, provider=None):
     """Lanza PTError (sin incluir la key en el mensaje) si algo no es valido."""
+    provider = normalize_provider(provider) if provider else active_provider()
+    name = LABELS[provider]
     if not (api_key or "").strip():
-        raise PTError("escribe la API key.")
+        raise PTError(f"escribe la API key de {name}.")
     if re.search(r"\s", api_key.strip()):
         raise PTError("la API key no puede contener espacios ni saltos de linea.")
     if not (model or "").strip():
-        raise PTError("escribe el modelo (por ejemplo " + DEFAULT_MODEL + ").")
+        ejemplo = (f" (por ejemplo {DEFAULT_MODELS[provider]})" if DEFAULT_MODELS[provider]
+                   else " (un modelo con vision)")
+        raise PTError(f"escribe el modelo de {name}{ejemplo}.")
     if re.search(r"[^A-Za-z0-9._:\-]", model.strip()):
         raise PTError("el modelo solo puede tener letras, numeros y . _ : -")
 
 
-def save_settings(api_key, model):
-    """Guarda ANTHROPIC_API_KEY y ANTHROPIC_MODEL en .env. Devuelve la ruta del archivo."""
-    validate(api_key, model)
+def save_settings(api_key, model, provider=None):
+    """
+    Guarda AI_PROVIDER y la clave/modelo de ESE proveedor en .env (provider=None: el activo).
+    Devuelve la ruta del archivo.
+    """
+    provider = normalize_provider(provider) if provider else active_provider()
+    validate(api_key, model, provider)
     api_key, model = api_key.strip(), model.strip()
     path = paths.ENV_PATH
     lines = []
@@ -84,7 +123,7 @@ def save_settings(api_key, model):
                 lines = f.read().splitlines()
         except OSError as e:
             raise PTError(f"no se pudo leer {path}: {type(e).__name__}") from e
-    wanted = {KEY_VAR: api_key, MODEL_VAR: model}
+    wanted = {PROVIDER_VAR: provider, KEY_VARS[provider]: api_key, MODEL_VARS[provider]: model}
     done = set()
     out = []
     for line in lines:
@@ -110,6 +149,6 @@ def save_settings(api_key, model):
         except OSError:
             pass
         raise PTError(f"no se pudo guardar {path}: {type(e).__name__}") from e
-    os.environ[KEY_VAR] = api_key
-    os.environ[MODEL_VAR] = model
+    for var, val in wanted.items():
+        os.environ[var] = val
     return path

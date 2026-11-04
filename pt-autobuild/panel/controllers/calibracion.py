@@ -3,6 +3,7 @@
 import os
 
 from automation import calibrate, cable_link, configure_ip, configure_router
+from core import ai_providers
 from core import autocalibrate as ac
 from core import coords as coords_io
 from core import paths, settings
@@ -60,8 +61,13 @@ class CalibracionController:
 
     @staticmethod
     def _need_key():
-        if not settings.read_settings()["has_key"]:
-            raise PTError("falta la API key: configurala en la pestana Ajustes.")
+        cfg = settings.read_settings()
+        name = ai_providers.label(cfg["provider"])
+        if not cfg["has_key"]:
+            raise PTError(f"falta la API key de {name} (proveedor activo): configurala en la "
+                          "pestana Ajustes.")
+        if not cfg["model"]:
+            raise PTError(f"falta el modelo de {name}: configuralo en la pestana Ajustes.")
 
     # ----- IA ----------------------------------------------------------------------------
     def _auto(self, label, groups, *, dry_run, force):
