@@ -18,3 +18,22 @@ def set_sink(fn):
 def emit(msg=""):
     if _sink is not None:
         _sink(str(msg))
+
+
+class capture:
+    """Context manager: redirige temporalmente los mensajes a `fn` y restaura el anterior."""
+
+    def __init__(self, fn):
+        self._fn = fn
+        self._prev = None
+
+    def __enter__(self):
+        global _sink
+        self._prev = _sink
+        _sink = self._fn
+        return self
+
+    def __exit__(self, *exc):
+        global _sink
+        _sink = self._prev
+        return False

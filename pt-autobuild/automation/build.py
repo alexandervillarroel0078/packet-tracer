@@ -405,12 +405,23 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
     ip_ok = 0
     ip_fail = 0
     aborted = False
+    total_steps = (2 * len(placements) + len(notes) + len(iface_notes) + len(link_notes)
+                   + len(pcs_to_cfg))
+    done_steps = 0
+
+    def tick():
+        nonlocal done_steps
+        done_steps += 1
+        if args.progress:
+            args.progress(done_steps, total_steps)
+
     try:
         for p in placements:
             common.check_cancel(cancel)
             place_device(coords, p["model"], p["x"], p["y"],
                          args.pause, args.filter_delay)
             placed_ok += 1
+            tick()
         # Paso adicional: renombrar el label visual (no el hostname) de cada
         # dispositivo con su nombre declarado en la topologia. EXPERIMENTAL:
         # offset confirmado a mano solo para router; switch/end_device usan
@@ -420,6 +431,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
             rename_label.rename_label(p["x"], p["y"], p["nombre"],
                                       category=p["category"], pause=args.pause)
             renamed_ok += 1
+            tick()
         # Cableado de ENLACES: el CALCULO (compute_cabling_plan) ya esta
         # listo, pero la mecanica del clic en Packet Tracer todavia no esta
         # confirmada a mano -- no se mueve el mouse para esto todavia.
@@ -436,6 +448,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
             add_note.place_note(n["texto"], n["x"], n["y"],
                                 pause=args.pause, focus_xy=note_focus_xy)
             notes_ok += 1
+            tick()
         # Paso adicional: notas de interfaz (LAN de router + enlaces). Mismo
         # mecanismo que las notas CIDR de arriba; NO configura ninguna IP
         # real, solo coloca el texto en el lienzo.
@@ -444,6 +457,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
             add_note.place_note(n["texto"], n["x"], n["y"],
                                 pause=args.pause, focus_xy=note_focus_xy)
             iface_notes_ok += 1
+            tick()
         # Paso adicional: notas de enlace (CIDR completo en el punto medio
         # de cada 'ENLACES:'). Mismo mecanismo que las notas de arriba.
         for n in link_notes:
@@ -451,6 +465,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
             add_note.place_note(n["texto"], n["x"], n["y"],
                                 pause=args.pause, focus_xy=note_focus_xy)
             link_notes_ok += 1
+            tick()
     except pyautogui.FailSafeException:
         aborted = True
         log("\n  ABORTADO por failsafe (mouse en la esquina superior izquierda).")
@@ -477,6 +492,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
                                           p["mascara"], p["gateway"],
                                           pause=args.pause)
                     ip_ok += 1
+                    tick()
                     log(f"    OK    {p['nombre']:<10} {p['ip']}/{p['mascara']} "
                           f"gw {p['gateway']}")
                 except CancelledError:
@@ -493,6 +509,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
                     break
                 except Exception as e:  # noqa: BLE001  (una PC falla -> seguir con las demas)
                     ip_fail += 1
+                    tick()
                     log(f"    FALLO {p['nombre']:<10} ({type(e).__name__}: {e})")
 
     try:
@@ -537,7 +554,8 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
 class BuildOptions:
     """Opciones de ejecucion de build_topology (dry_run=True por defecto)."""
 
-    def __init__(self, dry_run=True, countdown=5, pause=0.4, filter_delay=0.4):
+    def __init__(self, dry_run=True, countdown=5, pause=0.4, filter_delay=0.4, progress=None):
+        self.progress = progress   # callback(hecho, total) opcional, para la barra del panel
         self.dry_run = dry_run
         self.countdown = max(0, int(countdown))
         self.pause = pause
@@ -550,7 +568,7 @@ def list_models(catalog_path=None, log=None):
 
 
 def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown=5,
-                   catalog_path=None, log=None, cancel=None):
+                   catalog_path=None, log=None, cancel=None, progress=None):
     """
     Coloca una topologia en Packet Tracer (sintaxis simple "3 routers, 2 switches, 5 PC" o
     por redes agrupadas). dry_run=True (por defecto) solo calcula y muestra el plan: no mueve
@@ -561,7 +579,7 @@ def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown
     detienen la colocacion con un resumen parcial (aborted=True) y guardan lo ya colocado.
     """
     log = common.get_log(log)
-    args = BuildOptions(dry_run, countdown, pause, filter_delay)
+    args = BuildOptions(dry_run, countdown, pause, filter_delay, progress)
     catalog = load_catalog(catalog_path or CATALOG_PATH)
     if not str(text).strip():
         raise TopologyError("indica una topologia.")
@@ -602,6 +620,14 @@ def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown
     start_countdown(args.countdown, log, cancel)
 
     attempted = {"router": 0, "switch": 0, "end_device": 0}
+    done_steps = 0
+
+    def tick():
+        nonlocal done_steps
+        done_steps += 1
+        if args.progress:
+            args.progress(done_steps, len(placements))
+
     placed_ok = 0
     aborted = False
     try:
@@ -611,6 +637,7 @@ def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown
                          args.pause, args.filter_delay)
             attempted[p["category"]] += 1
             placed_ok += 1
+            tick()
     except pyautogui.FailSafeException:
         aborted = True
         log("\n  ABORTADO por failsafe (mouse en la esquina superior izquierda).")

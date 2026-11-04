@@ -294,11 +294,9 @@ def test_core_topology_no_importa_pyautogui():
     assert r.returncode == 0, r.stderr
 
 
-def test_automation_sin_print_ni_sysexit_salvo_puente_temporal():
+def test_automation_sin_print_ni_sysexit():
     offenders = []
     for path in glob.glob(os.path.join(ROOT, "automation", "*.py")):
-        if os.path.basename(path) == "_legacy_cli.py":
-            continue
         tree = ast.parse(open(path, encoding="utf-8").read())
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):

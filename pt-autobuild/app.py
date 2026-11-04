@@ -14,7 +14,7 @@ if ROOT not in sys.path:
 
 def main():
     from core import dpi_aware  # noqa: F401  DEBE ir antes de pyautogui
-    from panel.panel_control import main as run_panel
+    from panel.main import main as run_panel
     run_panel()
 
 

@@ -49,6 +49,8 @@ def isolated_data_dir(tmp_path, monkeypatch):
         "ROUTER_COORDS_PATH": str(data / "router_coords.json"),
         "CABLE_COORDS_PATH": str(data / "cable_coords.json"),
         "PANEL_STATE_PATH": str(data / "panel_state.json"),
+        "ENV_PATH": str(tmp_path / ".env"),
+        "REFERENCE_IMAGES_DIR": str(tmp_path / "reference_images"),
         "TOPOLOGY_DIR": str(topo),
         "TOPOLOGY_HISTORY_DIR": str(topo / "history"),
         "TOPOLOGY_ACTUAL_PATH": str(topo / "topologia_actual.json"),

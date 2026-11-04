@@ -84,7 +84,13 @@ DESCRIPTIONS = {
 
 
 GROUPS = ("main", "cable", "ip")
-FILE_PATHS = {"coords": COORDS_PATH, "cable": CABLE_COORDS_PATH, "ip": IP_CONFIG_COORDS_PATH}
+
+
+def _file_paths():
+    """Rutas de los JSON de coordenadas, leidas al momento (no congeladas al importar)."""
+    return {"coords": COORDS_PATH, "cable": CABLE_COORDS_PATH, "ip": IP_CONFIG_COORDS_PATH}
+
+
 GROUP_FILE = {"main": "coords", "cable": "cable", "ip": "ip"}
 
 # Estados de UI que hacen visibles a los elementos (se le piden a la IA como booleanos)
@@ -550,18 +556,35 @@ def png_b64(img, size):
 # API de Anthropic
 # =====================================================================
 def call_vision_api(key, model, img_b64, prompt):
-    """POST a /v1/messages. Devuelve el texto de la respuesta. Nunca expone la key."""
+    """Mensaje con imagen. Devuelve el texto de la respuesta. Nunca expone la key."""
+    return call_api(key, model, [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                     "data": img_b64}},
+        {"type": "text", "text": prompt},
+    ], max_tokens=1024)
+
+
+def test_connection(key, model):
+    """
+    Comprueba clave, modelo y red con una peticion minima (solo texto, ~10 tokens).
+    Devuelve un mensaje de exito; lanza AutoCalibrateError con una causa clara si falla.
+    """
+    if not (key or "").strip():
+        raise AutoCalibrateError("falta la API key.")
+    call_api(key.strip(), (model or "").strip() or DEFAULT_MODEL,
+             [{"type": "text", "text": "Responde solo con la palabra: ok"}], max_tokens=8)
+    return f"Conexion correcta con la API (modelo {(model or '').strip() or DEFAULT_MODEL})."
+
+
+def call_api(key, model, content, max_tokens=1024):
+    """POST a /v1/messages con `content` (lista de bloques). Nunca expone la key."""
     import urllib.error
     import urllib.request
 
     body = json.dumps({
         "model": model,
-        "max_tokens": 1024,
-        "messages": [{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png",
-                                         "data": img_b64}},
-            {"type": "text", "text": prompt},
-        ]}],
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": content}],
     }).encode("utf-8")
     req = urllib.request.Request(API_URL, data=body, method="POST", headers={
         "content-type": "application/json",
@@ -841,8 +864,8 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     import pyautogui
 
     files = list(dict.fromkeys(GROUP_FILE[g] for g in groups))
-    datas = {f: coords_io.load_coords(FILE_PATHS[f]) for f in files}
-    cable_data = datas.get("cable") or coords_io.load_coords(FILE_PATHS["cable"])
+    datas = {f: coords_io.load_coords(_file_paths()[f]) for f in files}
+    cable_data = datas.get("cable") or coords_io.load_coords(_file_paths()["cable"])
     registry = build_registry(cable_data)
     els = select_elements(registry, groups)
     mouse = tuple(pyautogui.position())  # para list_offset (clic previo en el dispositivo)
@@ -984,8 +1007,8 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
         log("\n  --dry-run: NO se guardo nada.")
     else:
         for f, data in outputs.items():
-            if not coords_io.save_coords(FILE_PATHS[f], data):
-                raise AutoCalibrateError(f"no se pudo guardar {FILE_PATHS[f]}")
+            if not coords_io.save_coords(_file_paths()[f], data):
+                raise AutoCalibrateError(f"no se pudo guardar {_file_paths()[f]}")
     code = 0
     if unresolved:
         code = 1
@@ -1003,7 +1026,7 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     return code
 
 
-def run_check(groups=GROUPS, dry_run=False, log=emit):
+def run_check(groups=GROUPS, dry_run=False, log=emit, table_out=None):
     """
     --check: SIN API. Re-verifica con matchTemplate todos los puntos guardados y reporta
     cuales ya no coinciden. Actualiza el estado guardado salvo con --dry-run.
@@ -1012,8 +1035,8 @@ def run_check(groups=GROUPS, dry_run=False, log=emit):
     from core import coords as coords_io
 
     files = list(dict.fromkeys(GROUP_FILE[g] for g in groups))
-    datas = {f: coords_io.load_coords(FILE_PATHS[f]) for f in files}
-    registry = build_registry(datas.get("cable") or coords_io.load_coords(FILE_PATHS["cable"]))
+    datas = {f: coords_io.load_coords(_file_paths()[f]) for f in files}
+    registry = build_registry(datas.get("cable") or coords_io.load_coords(_file_paths()["cable"]))
     els = select_elements(registry, groups)
     env, win_warn = current_env()
     log(f"  Resolucion : {tuple(env['resolution'])}   Escala DPI: {env['dpi_scale']}")
@@ -1053,6 +1076,8 @@ def run_check(groups=GROUPS, dry_run=False, log=emit):
             data[META_KEY] = dict(meta, elements=new_recs)
 
     _print_table(table, log)
+    if table_out is not None:
+        table_out.extend(table)
     if stale:
         log("\n  Ya NO coinciden (resolucion / layout cambiaron o la pantalla no esta abierta):")
         for e, conf in stale:
@@ -1062,7 +1087,7 @@ def run_check(groups=GROUPS, dry_run=False, log=emit):
         log("\n  --dry-run: no se actualizo el estado guardado.")
     else:
         for f in changed_files:
-            coords_io.save_coords(FILE_PATHS[f], datas[f])
+            coords_io.save_coords(_file_paths()[f], datas[f])
     bad = [n for n, _f, st in table if st == "manual"]
     if bad:
         log("\n  Requieren recalibrar: " + ", ".join(bad) + "   (Autocalibrar, en la pestana Calibracion)")
@@ -1077,7 +1102,7 @@ def collect_status(groups=GROUPS):
     Devuelve [{"name","file","group","state","status","label"}].
     """
     from core import coords as coords_io
-    datas = {f: coords_io.load_coords(p) for f, p in FILE_PATHS.items()}
+    datas = {f: coords_io.load_coords(p) for f, p in _file_paths().items()}
     registry = build_registry(datas["cable"])
     rows = []
     for e in select_elements(registry, groups):
