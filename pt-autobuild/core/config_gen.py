@@ -31,7 +31,7 @@ Uso:
     # configs: {"R01": "=== Configuracion ESTATICA -- R01 ===\n...", ...}
 """
 
-from build import parse_grouped, TopologyError  # noqa: F401  (TopologyError se re-expone)
+from core.topology import parse_grouped, TopologyError  # noqa: F401  (TopologyError se re-expone)
 
 MODE_STATIC = "static"
 MODE_RIP = "rip"

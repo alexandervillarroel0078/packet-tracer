@@ -19,7 +19,7 @@ Seguridad (identica a los scripts):
 
 Uso:
     cd pt-autobuild
-    python panel_control.py
+    python app.py
 
 Dependencias: las de siempre (pip install -r requirements.txt). tkinter viene
 incluido con Python en Windows, no hay que instalar nada extra.
@@ -38,7 +38,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import tkinter as tk
 from tkinter import ttk
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # raiz del proyecto
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
@@ -239,7 +239,7 @@ class PanelControl:
              ["calibrate.py", "--manual", "canvas_bottom_right"]),
             ("Calibrar ventana IP", ["configure_ip.py", "--calibrate"]),
             ("Calibrar router (CLI)",
-             [os.path.join("routers", "configure_router.py"), "--calibrate"]),
+             ["configure_router.py", "--calibrate"]),
         ):
             bc = ttk.Button(f5, text=text,
                             command=lambda a=args: self._launch_console(a))
@@ -391,7 +391,11 @@ class PanelControl:
         Es solo un atajo: ejecuta los mismos scripts que correrias a mano
         (la calibracion pide teclas en una terminal real via msvcrt).
         """
-        cmd = [sys.executable] + list(args)
+        # los scripts viven en automation/ y se lanzan como modulo: `python -m automation.x`
+        args = list(args)
+        if args and args[0].endswith(".py"):
+            args = ["-m", "automation._legacy_cli", os.path.splitext(os.path.basename(args[0]))[0]] + args[1:]  # PUENTE TEMPORAL
+        cmd = [sys.executable] + args
         self._emit(f"[calibracion] abriendo consola:  python {' '.join(args)}")
         kwargs = {"cwd": HERE}
         if os.name == "nt":
@@ -645,10 +649,8 @@ class PanelControl:
             return self._mods
         try:
             import pyautogui
-            import build
-            import config_gen  # noqa: F401  no usa pyautogui, pero importa build (si lo
-                               # exige) -- se carga aca igual para dar el mismo mensaje
-                               # de error amigable que el resto si falta una dependencia.
+            from automation import build
+            from core import config_gen
             from core import coords as coords_io
             from core.topology import load_topology
             from core.paths import (COORDS_PATH, IP_CONFIG_COORDS_PATH,
@@ -669,6 +671,8 @@ class PanelControl:
             "ROUTER_COORDS_PATH": ROUTER_COORDS_PATH,
             "TOPOLOGY_ACTUAL_PATH": TOPOLOGY_ACTUAL_PATH,
         }
+        from core import log as core_log
+        core_log.set_sink(self._emit)  # los mensajes de core/ van al log del panel
         ok, msg = dpi_aware.verify()
         self._emit(f"DPI awareness: {dpi_aware.STATUS}")
         self._emit(("" if ok else "[!] ") + msg)
@@ -686,7 +690,7 @@ class PanelControl:
         self._start_job(
             "Colocar topologia",
             argv=argv,
-            main_getter=lambda m: m["build"].main,
+            main_getter=lambda m: __import__("automation._legacy_cli", fromlist=["x"]).build_main,  # PUENTE TEMPORAL
             precheck=self._precheck_topology_optional,
         )
 

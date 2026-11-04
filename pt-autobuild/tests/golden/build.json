@@ -1,0 +1,1757 @@
+{
+ "calculos": {
+  "grouped": {
+   "declarada": {
+    "cabling_plan": [
+     {
+      "cidr": "10.0.0.0/30",
+      "idx1": 3,
+      "idx2": 3,
+      "if1": "Se0/1/0",
+      "if2": "Se0/1/0",
+      "linea": 12,
+      "r1": "R01",
+      "r2": "R02"
+     }
+    ],
+    "cabling_warnings": [],
+    "iface_notes": [
+     {
+      "ip": "192.168.10.1",
+      "mascara": "255.255.255.0",
+      "nombre": "Gig0/0/0",
+      "router": "R01",
+      "texto": "Gig0/0/0 .1/24",
+      "x": 459,
+      "y": 205
+     },
+     {
+      "ip": "192.168.20.1",
+      "mascara": "255.255.255.0",
+      "nombre": "Gig0/0/0",
+      "router": "R02",
+      "texto": "Gig0/0/0 .1/24",
+      "x": 1353,
+      "y": 205
+     },
+     {
+      "ip": "10.0.0.1",
+      "mascara": "255.255.255.252",
+      "nombre": "Se0/1/0",
+      "router": "R01",
+      "texto": "Se0/1/0 .1/30",
+      "x": 484,
+      "y": 180
+     },
+     {
+      "ip": "10.0.0.2",
+      "mascara": "255.255.255.252",
+      "nombre": "Se0/1/0",
+      "router": "R02",
+      "texto": "Se0/1/0 .2/30",
+      "x": 1328,
+      "y": 180
+     }
+    ],
+    "is_grouped": true,
+    "link_notes": [
+     {
+      "cidr": "10.0.0.0/30",
+      "if1": "Se0/1/0",
+      "if2": "Se0/1/0",
+      "ip1": "10.0.0.1",
+      "ip2": "10.0.0.2",
+      "mascara": "255.255.255.252",
+      "r1": "R01",
+      "r2": "R02",
+      "texto": "10.0.0.0/30",
+      "x": 906,
+      "y": 180
+     }
+    ],
+    "notes": [
+     {
+      "red": "Red1",
+      "texto": "192.168.10.0/24",
+      "x": 459,
+      "y": 156
+     },
+     {
+      "red": "Red2",
+      "texto": "192.168.20.0/24",
+      "x": 1353,
+      "y": 156
+     }
+    ],
+    "parsed": {
+     "enlaces": [
+      {
+       "cidr": "10.0.0.0/30",
+       "if1": "Se0/1/0",
+       "if2": "Se0/1/0",
+       "ip1": "10.0.0.1",
+       "ip2": "10.0.0.2",
+       "linea": 12,
+       "mascara": "255.255.255.252",
+       "network": "10.0.0.0/30",
+       "prefixlen": 30,
+       "r1": "R01",
+       "r2": "R02"
+      }
+     ],
+     "redes": [
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "192.168.10.0/24",
+       "direct": false,
+       "iface_lan": "Gig0/0/0",
+       "linea": 4,
+       "network": "192.168.10.0/24",
+       "nombre": "Red1",
+       "pcs": [
+        {
+         "ip": "192.168.10.2",
+         "modelo": "PC",
+         "nombre": "PC1"
+        },
+        {
+         "ip": "192.168.10.3",
+         "modelo": "PC",
+         "nombre": "PC2"
+        }
+       ],
+       "router_lan": "R01",
+       "switch_explicit": true,
+       "switch_name": "Sw1"
+      },
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "192.168.20.0/24",
+       "direct": false,
+       "iface_lan": "Gig0/0/0",
+       "linea": 8,
+       "network": "192.168.20.0/24",
+       "nombre": "Red2",
+       "pcs": [
+        {
+         "ip": "192.168.20.10",
+         "modelo": "PC",
+         "nombre": "PC3"
+        },
+        {
+         "ip": "192.168.20.2",
+         "modelo": "PC",
+         "nombre": "PC4"
+        }
+       ],
+       "router_lan": "R02",
+       "switch_explicit": false,
+       "switch_name": "Sw2"
+      }
+     ],
+     "router_models": {
+      "R01": "4331",
+      "R02": "4331"
+     },
+     "routers": [
+      "R01",
+      "R02"
+     ],
+     "switch_models": {},
+     "switches": [
+      "Sw1",
+      "Sw2"
+     ]
+    },
+    "placements": [
+     {
+      "category": "router",
+      "model": "4331",
+      "nombre": "R01",
+      "x": 459,
+      "y": 180
+     },
+     {
+      "category": "router",
+      "model": "4331",
+      "nombre": "R02",
+      "x": 1353,
+      "y": 180
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw1",
+      "x": 459,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.10.1",
+      "ip": "192.168.10.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC1",
+      "x": 432,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.10.1",
+      "ip": "192.168.10.3",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC2",
+      "x": 486,
+      "y": 414
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw2",
+      "x": 1353,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.20.1",
+      "ip": "192.168.20.10",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC3",
+      "x": 1326,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.20.1",
+      "ip": "192.168.20.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC4",
+      "x": 1380,
+      "y": 414
+     }
+    ],
+    "record": {
+     "canvas": {
+      "bottom_right": [
+       1800,
+       800
+      ],
+      "top_left": [
+       12,
+       150
+      ]
+     },
+     "comando_original": "SWITCHES: Sw1, Sw2 ROUTERS: 4331: R01, R02 RED Red1: 192.168.10.0/24 R01-Sw1 PC1 .2 PC2 RED Red2: 192.168.20.0/24 R02 Gig0/0/0 PC3 .10 PC4 ENLACES: R01 Se0/1/0 R02 10.0.0.0/30",
+     "coords_json": {
+      "canvas": {
+       "bottom_right": [
+        1800,
+        800
+       ],
+       "top_left": [
+        12,
+        150
+       ]
+      },
+      "filtered_result": [
+       200,
+       950
+      ],
+      "search_field": [
+       300,
+       1000
+      ]
+     },
+     "dispositivos": [
+      {
+       "id": 1,
+       "interfaces": [
+        {
+         "ip": "192.168.10.1",
+         "mascara": "255.255.255.0",
+         "nombre": "Gig0/0/0",
+         "posicion": [
+          459,
+          205
+         ]
+        },
+        {
+         "ip": "10.0.0.1",
+         "mascara": "255.255.255.252",
+         "nombre": "Se0/1/0",
+         "posicion": [
+          484,
+          180
+         ]
+        }
+       ],
+       "modelo": "4331",
+       "nombre": "R01",
+       "posicion": [
+        459,
+        180
+       ],
+       "tipo": "router"
+      },
+      {
+       "id": 2,
+       "interfaces": [
+        {
+         "ip": "192.168.20.1",
+         "mascara": "255.255.255.0",
+         "nombre": "Gig0/0/0",
+         "posicion": [
+          1353,
+          205
+         ]
+        },
+        {
+         "ip": "10.0.0.2",
+         "mascara": "255.255.255.252",
+         "nombre": "Se0/1/0",
+         "posicion": [
+          1328,
+          180
+         ]
+        }
+       ],
+       "modelo": "4331",
+       "nombre": "R02",
+       "posicion": [
+        1353,
+        180
+       ],
+       "tipo": "router"
+      },
+      {
+       "id": 3,
+       "modelo": "2960",
+       "nombre": "Sw1",
+       "posicion": [
+        459,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "192.168.10.1",
+       "id": 4,
+       "ip": "192.168.10.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC1",
+       "posicion": [
+        432,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.10.1",
+       "id": 5,
+       "ip": "192.168.10.3",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC2",
+       "posicion": [
+        486,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "id": 6,
+       "modelo": "2960",
+       "nombre": "Sw2",
+       "posicion": [
+        1353,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "192.168.20.1",
+       "id": 7,
+       "ip": "192.168.20.10",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC3",
+       "posicion": [
+        1326,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.20.1",
+       "id": 8,
+       "ip": "192.168.20.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC4",
+       "posicion": [
+        1380,
+        414
+       ],
+       "tipo": "pc"
+      }
+     ],
+     "enlaces": [
+      {
+       "cidr": "10.0.0.0/30",
+       "if1": "Se0/1/0",
+       "if2": "Se0/1/0",
+       "ip1": "10.0.0.1",
+       "ip2": "10.0.0.2",
+       "mascara": "255.255.255.252",
+       "nota_red": {
+        "posicion": [
+         906,
+         180
+        ],
+        "texto": "10.0.0.0/30"
+       },
+       "r1": "R01",
+       "r2": "R02"
+      }
+     ],
+     "fecha": "2026-01-01T12:00:00",
+     "notas": [
+      {
+       "posicion": [
+        459,
+        156
+       ],
+       "red": "Red1",
+       "texto": "192.168.10.0/24"
+      },
+      {
+       "posicion": [
+        1353,
+        156
+       ],
+       "red": "Red2",
+       "texto": "192.168.20.0/24"
+      }
+     ],
+     "redes": [
+      {
+       "cidr": "192.168.10.0/24",
+       "nombre": "Red1"
+      },
+      {
+       "cidr": "192.168.20.0/24",
+       "nombre": "Red2"
+      }
+     ]
+    },
+    "warnings": []
+   },
+   "redes.txt": {
+    "cabling_plan": [],
+    "cabling_warnings": [],
+    "iface_notes": [],
+    "is_grouped": true,
+    "link_notes": [],
+    "notes": [
+     {
+      "red": "Red1",
+      "texto": "192.168.10.0/24",
+      "x": 459,
+      "y": 156
+     },
+     {
+      "red": "Red2",
+      "texto": "192.168.20.0/24",
+      "x": 1353,
+      "y": 156
+     }
+    ],
+    "parsed": {
+     "enlaces": [],
+     "redes": [
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "192.168.10.0/24",
+       "direct": false,
+       "iface_lan": null,
+       "linea": 4,
+       "network": "192.168.10.0/24",
+       "nombre": "Red1",
+       "pcs": [
+        {
+         "ip": "192.168.10.2",
+         "modelo": "PC",
+         "nombre": "PC1"
+        },
+        {
+         "ip": "192.168.10.3",
+         "modelo": "PC",
+         "nombre": "PC2"
+        },
+        {
+         "ip": "192.168.10.4",
+         "modelo": "PC",
+         "nombre": "PC3"
+        }
+       ],
+       "router_lan": null,
+       "switch_explicit": false,
+       "switch_name": "Sw1"
+      },
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "192.168.20.0/24",
+       "direct": false,
+       "iface_lan": null,
+       "linea": 9,
+       "network": "192.168.20.0/24",
+       "nombre": "Red2",
+       "pcs": [
+        {
+         "ip": "192.168.20.2",
+         "modelo": "PC",
+         "nombre": "PC4"
+        },
+        {
+         "ip": "192.168.20.3",
+         "modelo": "PC",
+         "nombre": "PC5"
+        },
+        {
+         "ip": "192.168.20.4",
+         "modelo": "PC",
+         "nombre": "PC6"
+        }
+       ],
+       "router_lan": null,
+       "switch_explicit": false,
+       "switch_name": "Sw2"
+      }
+     ],
+     "router_models": {},
+     "routers": [
+      "R01",
+      "R02"
+     ],
+     "switch_models": {},
+     "switches": [
+      "Sw1",
+      "Sw2"
+     ]
+    },
+    "placements": [
+     {
+      "category": "router",
+      "model": "4331",
+      "nombre": "R01",
+      "x": 459,
+      "y": 180
+     },
+     {
+      "category": "router",
+      "model": "4331",
+      "nombre": "R02",
+      "x": 1353,
+      "y": 180
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw1",
+      "x": 459,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.10.1",
+      "ip": "192.168.10.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC1",
+      "x": 404,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.10.1",
+      "ip": "192.168.10.3",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC2",
+      "x": 459,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.10.1",
+      "ip": "192.168.10.4",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC3",
+      "x": 514,
+      "y": 414
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw2",
+      "x": 1353,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.20.1",
+      "ip": "192.168.20.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC4",
+      "x": 1298,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.20.1",
+      "ip": "192.168.20.3",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC5",
+      "x": 1353,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.20.1",
+      "ip": "192.168.20.4",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC6",
+      "x": 1408,
+      "y": 414
+     }
+    ],
+    "record": {
+     "canvas": {
+      "bottom_right": [
+       1800,
+       800
+      ],
+      "top_left": [
+       12,
+       150
+      ]
+     },
+     "comando_original": "SWITCHES: Sw1, Sw2 ROUTERS: R01, R02 RED Red1: 192.168.10.0/24 PC1 .2 PC2 .3 PC3 .4 RED Red2: 192.168.20.0/24 PC4 PC5 PC6",
+     "coords_json": {
+      "canvas": {
+       "bottom_right": [
+        1800,
+        800
+       ],
+       "top_left": [
+        12,
+        150
+       ]
+      },
+      "filtered_result": [
+       200,
+       950
+      ],
+      "search_field": [
+       300,
+       1000
+      ]
+     },
+     "dispositivos": [
+      {
+       "id": 1,
+       "modelo": "4331",
+       "nombre": "R01",
+       "posicion": [
+        459,
+        180
+       ],
+       "tipo": "router"
+      },
+      {
+       "id": 2,
+       "modelo": "4331",
+       "nombre": "R02",
+       "posicion": [
+        1353,
+        180
+       ],
+       "tipo": "router"
+      },
+      {
+       "id": 3,
+       "modelo": "2960",
+       "nombre": "Sw1",
+       "posicion": [
+        459,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "192.168.10.1",
+       "id": 4,
+       "ip": "192.168.10.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC1",
+       "posicion": [
+        404,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.10.1",
+       "id": 5,
+       "ip": "192.168.10.3",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC2",
+       "posicion": [
+        459,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.10.1",
+       "id": 6,
+       "ip": "192.168.10.4",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC3",
+       "posicion": [
+        514,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "id": 7,
+       "modelo": "2960",
+       "nombre": "Sw2",
+       "posicion": [
+        1353,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "192.168.20.1",
+       "id": 8,
+       "ip": "192.168.20.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC4",
+       "posicion": [
+        1298,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.20.1",
+       "id": 9,
+       "ip": "192.168.20.3",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC5",
+       "posicion": [
+        1353,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.20.1",
+       "id": 10,
+       "ip": "192.168.20.4",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC6",
+       "posicion": [
+        1408,
+        414
+       ],
+       "tipo": "pc"
+      }
+     ],
+     "enlaces": [],
+     "fecha": "2026-01-01T12:00:00",
+     "notas": [
+      {
+       "posicion": [
+        459,
+        156
+       ],
+       "red": "Red1",
+       "texto": "192.168.10.0/24"
+      },
+      {
+       "posicion": [
+        1353,
+        156
+       ],
+       "red": "Red2",
+       "texto": "192.168.20.0/24"
+      }
+     ],
+     "redes": [
+      {
+       "cidr": "192.168.10.0/24",
+       "nombre": "Red1"
+      },
+      {
+       "cidr": "192.168.20.0/24",
+       "nombre": "Red2"
+      }
+     ]
+    },
+    "warnings": []
+   },
+   "redes2.txt": {
+    "cabling_plan": [],
+    "cabling_warnings": [],
+    "iface_notes": [],
+    "is_grouped": true,
+    "link_notes": [],
+    "notes": [
+     {
+      "red": "Red1",
+      "texto": "192.168.10.0/24",
+      "x": 236,
+      "y": 156
+     },
+     {
+      "red": "Red2",
+      "texto": "192.168.20.0/24",
+      "x": 682,
+      "y": 156
+     },
+     {
+      "red": "Red3",
+      "texto": "172.16.0.0/24",
+      "x": 1130,
+      "y": 156
+     },
+     {
+      "red": "Red4",
+      "texto": "10.0.0.0/24",
+      "x": 1576,
+      "y": 156
+     }
+    ],
+    "parsed": {
+     "enlaces": [],
+     "redes": [
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "192.168.10.0/24",
+       "direct": false,
+       "iface_lan": null,
+       "linea": 4,
+       "network": "192.168.10.0/24",
+       "nombre": "Red1",
+       "pcs": [
+        {
+         "ip": "192.168.10.2",
+         "modelo": "PC",
+         "nombre": "PC1"
+        },
+        {
+         "ip": "192.168.10.3",
+         "modelo": "PC",
+         "nombre": "PC2"
+        }
+       ],
+       "router_lan": null,
+       "switch_explicit": false,
+       "switch_name": "Sw1"
+      },
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "192.168.20.0/24",
+       "direct": false,
+       "iface_lan": null,
+       "linea": 8,
+       "network": "192.168.20.0/24",
+       "nombre": "Red2",
+       "pcs": [
+        {
+         "ip": "192.168.20.10",
+         "modelo": "PC",
+         "nombre": "PC3"
+        },
+        {
+         "ip": "192.168.20.2",
+         "modelo": "PC",
+         "nombre": "PC4"
+        }
+       ],
+       "router_lan": null,
+       "switch_explicit": false,
+       "switch_name": "Sw2"
+      },
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "172.16.0.0/24",
+       "direct": false,
+       "iface_lan": null,
+       "linea": 12,
+       "network": "172.16.0.0/24",
+       "nombre": "Red3",
+       "pcs": [
+        {
+         "ip": "172.16.0.2",
+         "modelo": "PC",
+         "nombre": "PC5"
+        },
+        {
+         "ip": "172.16.0.3",
+         "modelo": "PC",
+         "nombre": "PC6"
+        },
+        {
+         "ip": "172.16.0.4",
+         "modelo": "PC",
+         "nombre": "PC7"
+        }
+       ],
+       "router_lan": null,
+       "switch_explicit": false,
+       "switch_name": "Sw3"
+      },
+      {
+       "_connector_checked": true,
+       "_pending_direct_pc": null,
+       "cidr": "10.0.0.0/24",
+       "direct": false,
+       "iface_lan": null,
+       "linea": 17,
+       "network": "10.0.0.0/24",
+       "nombre": "Red4",
+       "pcs": [
+        {
+         "ip": "10.0.0.2",
+         "modelo": "PC",
+         "nombre": "PC8"
+        }
+       ],
+       "router_lan": null,
+       "switch_explicit": false,
+       "switch_name": "Sw4"
+      }
+     ],
+     "router_models": {},
+     "routers": [
+      "R01",
+      "R02"
+     ],
+     "switch_models": {},
+     "switches": [
+      "Sw1",
+      "Sw2",
+      "Sw3",
+      "Sw4"
+     ]
+    },
+    "placements": [
+     {
+      "category": "router",
+      "model": "4331",
+      "nombre": "R01",
+      "x": 459,
+      "y": 180
+     },
+     {
+      "category": "router",
+      "model": "4331",
+      "nombre": "R02",
+      "x": 1353,
+      "y": 180
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw1",
+      "x": 236,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.10.1",
+      "ip": "192.168.10.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC1",
+      "x": 208,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.10.1",
+      "ip": "192.168.10.3",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC2",
+      "x": 264,
+      "y": 414
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw2",
+      "x": 682,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.20.1",
+      "ip": "192.168.20.10",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC3",
+      "x": 654,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "192.168.20.1",
+      "ip": "192.168.20.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC4",
+      "x": 710,
+      "y": 414
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw3",
+      "x": 1130,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "172.16.0.1",
+      "ip": "172.16.0.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC5",
+      "x": 1075,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "172.16.0.1",
+      "ip": "172.16.0.3",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC6",
+      "x": 1130,
+      "y": 414
+     },
+     {
+      "category": "end_device",
+      "gateway": "172.16.0.1",
+      "ip": "172.16.0.4",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC7",
+      "x": 1185,
+      "y": 414
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "nombre": "Sw4",
+      "x": 1576,
+      "y": 297
+     },
+     {
+      "category": "end_device",
+      "gateway": "10.0.0.1",
+      "ip": "10.0.0.2",
+      "mascara": "255.255.255.0",
+      "model": "PC",
+      "nombre": "PC8",
+      "x": 1576,
+      "y": 414
+     }
+    ],
+    "record": {
+     "canvas": {
+      "bottom_right": [
+       1800,
+       800
+      ],
+      "top_left": [
+       12,
+       150
+      ]
+     },
+     "comando_original": "SWITCHES: Sw1, Sw2, Sw3, Sw4 ROUTERS: R01, R02 RED Red1: 192.168.10.0/24 PC1 .2 PC2 .3 RED Red2: 192.168.20.0/24 PC3 .10 PC4 RED Red3: 172.16.0.0/24 PC5 PC6 PC7 RED Red4: 10.0.0.0/24 PC8",
+     "coords_json": {
+      "canvas": {
+       "bottom_right": [
+        1800,
+        800
+       ],
+       "top_left": [
+        12,
+        150
+       ]
+      },
+      "filtered_result": [
+       200,
+       950
+      ],
+      "search_field": [
+       300,
+       1000
+      ]
+     },
+     "dispositivos": [
+      {
+       "id": 1,
+       "modelo": "4331",
+       "nombre": "R01",
+       "posicion": [
+        459,
+        180
+       ],
+       "tipo": "router"
+      },
+      {
+       "id": 2,
+       "modelo": "4331",
+       "nombre": "R02",
+       "posicion": [
+        1353,
+        180
+       ],
+       "tipo": "router"
+      },
+      {
+       "id": 3,
+       "modelo": "2960",
+       "nombre": "Sw1",
+       "posicion": [
+        236,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "192.168.10.1",
+       "id": 4,
+       "ip": "192.168.10.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC1",
+       "posicion": [
+        208,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.10.1",
+       "id": 5,
+       "ip": "192.168.10.3",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC2",
+       "posicion": [
+        264,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "id": 6,
+       "modelo": "2960",
+       "nombre": "Sw2",
+       "posicion": [
+        682,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "192.168.20.1",
+       "id": 7,
+       "ip": "192.168.20.10",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC3",
+       "posicion": [
+        654,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "192.168.20.1",
+       "id": 8,
+       "ip": "192.168.20.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC4",
+       "posicion": [
+        710,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "id": 9,
+       "modelo": "2960",
+       "nombre": "Sw3",
+       "posicion": [
+        1130,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "172.16.0.1",
+       "id": 10,
+       "ip": "172.16.0.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC5",
+       "posicion": [
+        1075,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "172.16.0.1",
+       "id": 11,
+       "ip": "172.16.0.3",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC6",
+       "posicion": [
+        1130,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "gateway": "172.16.0.1",
+       "id": 12,
+       "ip": "172.16.0.4",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC7",
+       "posicion": [
+        1185,
+        414
+       ],
+       "tipo": "pc"
+      },
+      {
+       "id": 13,
+       "modelo": "2960",
+       "nombre": "Sw4",
+       "posicion": [
+        1576,
+        297
+       ],
+       "tipo": "switch"
+      },
+      {
+       "gateway": "10.0.0.1",
+       "id": 14,
+       "ip": "10.0.0.2",
+       "mascara": "255.255.255.0",
+       "modelo": "PC",
+       "nombre": "PC8",
+       "posicion": [
+        1576,
+        414
+       ],
+       "tipo": "pc"
+      }
+     ],
+     "enlaces": [],
+     "fecha": "2026-01-01T12:00:00",
+     "notas": [
+      {
+       "posicion": [
+        236,
+        156
+       ],
+       "red": "Red1",
+       "texto": "192.168.10.0/24"
+      },
+      {
+       "posicion": [
+        682,
+        156
+       ],
+       "red": "Red2",
+       "texto": "192.168.20.0/24"
+      },
+      {
+       "posicion": [
+        1130,
+        156
+       ],
+       "red": "Red3",
+       "texto": "172.16.0.0/24"
+      },
+      {
+       "posicion": [
+        1576,
+        156
+       ],
+       "red": "Red4",
+       "texto": "10.0.0.0/24"
+      }
+     ],
+     "redes": [
+      {
+       "cidr": "192.168.10.0/24",
+       "nombre": "Red1"
+      },
+      {
+       "cidr": "192.168.20.0/24",
+       "nombre": "Red2"
+      },
+      {
+       "cidr": "172.16.0.0/24",
+       "nombre": "Red3"
+      },
+      {
+       "cidr": "10.0.0.0/24",
+       "nombre": "Red4"
+      }
+     ]
+    },
+    "warnings": []
+   }
+  },
+  "grouped_errors": {
+   "ROUTERS: R01\nRED Red1: 192.168.10.0/24 R01\nPC1 .2\nPC2 .2\n": "linea 4: la IP 192.168.10.2 ya se uso en la red Red1.",
+   "ROUTERS: R01\nRED Red1: 192.168.10.999/24 R01\nPC1\n": "linea 2: CIDR invalido '192.168.10.999/24': '192.168.10.999/24' does not appear to be an IPv4 or IPv6 network",
+   "SWITCHES: Sw1, Sw1\nROUTERS: R01\n": "linea 1: nombre 'Sw1' duplicado (ya declarado en la linea 1)."
+  },
+  "iface_pos": [
+   125,
+   100
+  ],
+  "menu_index": {
+   "copper_Gig0/0/1": 4,
+   "serial_Se0/1/0": 3,
+   "serial_Se0/2/0_used_Se0/1/0": 3,
+   "switch_Fa0/3": 3
+  },
+  "simple": {
+   "1 router; 1 sw and 3 hosts # comentario": {
+    "dry_run_output": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION\n========================================================================\n------------------------------------------------------------------------\n  router      x 1    modelo 4331\n  switch      x 1    modelo 2960\n  end device  x 3    modelo PC\n  Total: 5 dispositivos\n------------------------------------------------------------------------\n    1. router      4331         -> (  906,   150)\n    2. switch      2960         -> (  906,   267)\n    3. end device  PC           -> (  906,   384)\n    4. end device  PC           -> (  906,   439)\n    5. end device  PC           -> (  906,   494)\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse.\n========================================================================",
+    "errors": [],
+    "groups": [
+     {
+      "category": "router",
+      "count": 1,
+      "model": null,
+      "word": "router"
+     },
+     {
+      "category": "switch",
+      "count": 1,
+      "model": null,
+      "word": "sw"
+     },
+     {
+      "category": "end_device",
+      "count": 3,
+      "model": "PC",
+      "word": "hosts"
+     }
+    ],
+    "layout_warnings": [],
+    "placements": [
+     {
+      "category": "router",
+      "model": "4331",
+      "x": 906,
+      "y": 150
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "x": 906,
+      "y": 267
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 906,
+      "y": 384
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 906,
+      "y": 439
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 906,
+      "y": 494
+     }
+    ],
+    "resolved": [
+     {
+      "category": "router",
+      "count": 1,
+      "model": "4331"
+     },
+     {
+      "category": "switch",
+      "count": 1,
+      "model": "2960"
+     },
+     {
+      "category": "end_device",
+      "count": 3,
+      "model": "PC"
+     }
+    ],
+    "warnings": []
+   },
+   "2 end devices": {
+    "dry_run_output": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION\n========================================================================\n------------------------------------------------------------------------\n  end device  x 2    modelo PC\n  Total: 2 dispositivos\n------------------------------------------------------------------------\n    1. end device  PC           -> (  459,   150)\n    2. end device  PC           -> ( 1353,   150)\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse.\n========================================================================",
+    "errors": [],
+    "groups": [
+     {
+      "category": "end_device",
+      "count": 2,
+      "model": null,
+      "word": "enddevices"
+     }
+    ],
+    "layout_warnings": [],
+    "placements": [
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 459,
+      "y": 150
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 1353,
+      "y": 150
+     }
+    ],
+    "resolved": [
+     {
+      "category": "end_device",
+      "count": 2,
+      "model": "PC"
+     }
+    ],
+    "warnings": []
+   },
+   "2 foo, 0 routers, 1 server": {
+    "dry_run_output": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION\n========================================================================\n------------------------------------------------------------------------\n  end device  x 1    modelo Server\n  Total: 1 dispositivos\n------------------------------------------------------------------------\n    1. end device  Server       -> (  906,   150)\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse.\n========================================================================",
+    "errors": [],
+    "groups": [
+     {
+      "category": "end_device",
+      "count": 1,
+      "model": "Server",
+      "word": "server"
+     }
+    ],
+    "layout_warnings": [],
+    "placements": [
+     {
+      "category": "end_device",
+      "model": "Server",
+      "x": 906,
+      "y": 150
+     }
+    ],
+    "resolved": [
+     {
+      "category": "end_device",
+      "count": 1,
+      "model": "Server"
+     }
+    ],
+    "warnings": [
+     "tipo no reconocido: 'foo' en '2 foo' (ignorado)"
+    ]
+   },
+   "2 routers, 2 switches, 4 PC": {
+    "dry_run_output": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION\n========================================================================\n------------------------------------------------------------------------\n  router      x 2    modelo 4331\n  switch      x 2    modelo 2960\n  end device  x 4    modelo PC\n  Total: 8 dispositivos\n------------------------------------------------------------------------\n    1. router      4331         -> (  459,   150)\n    2. router      4331         -> ( 1353,   150)\n    3. switch      2960         -> (  459,   267)\n    4. switch      2960         -> ( 1353,   267)\n    5. end device  PC           -> (  459,   384)\n    6. end device  PC           -> (  459,   439)\n    7. end device  PC           -> ( 1353,   384)\n    8. end device  PC           -> ( 1353,   439)\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse.\n========================================================================",
+    "errors": [],
+    "groups": [
+     {
+      "category": "router",
+      "count": 2,
+      "model": null,
+      "word": "routers"
+     },
+     {
+      "category": "switch",
+      "count": 2,
+      "model": null,
+      "word": "switches"
+     },
+     {
+      "category": "end_device",
+      "count": 4,
+      "model": "PC",
+      "word": "pc"
+     }
+    ],
+    "layout_warnings": [],
+    "placements": [
+     {
+      "category": "router",
+      "model": "4331",
+      "x": 459,
+      "y": 150
+     },
+     {
+      "category": "router",
+      "model": "4331",
+      "x": 1353,
+      "y": 150
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "x": 459,
+      "y": 267
+     },
+     {
+      "category": "switch",
+      "model": "2960",
+      "x": 1353,
+      "y": 267
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 459,
+      "y": 384
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 459,
+      "y": 439
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 1353,
+      "y": 384
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 1353,
+      "y": 439
+     }
+    ],
+    "resolved": [
+     {
+      "category": "router",
+      "count": 2,
+      "model": "4331"
+     },
+     {
+      "category": "switch",
+      "count": 2,
+      "model": "2960"
+     },
+     {
+      "category": "end_device",
+      "count": 4,
+      "model": "PC"
+     }
+    ],
+    "warnings": []
+   },
+   "3 routers modelo 4331, 1 tablet, 2 laptops": {
+    "dry_run_output": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION\n========================================================================\n------------------------------------------------------------------------\n  router      x 3    modelo 4331\n  end device  x 1    modelo Tablet\n  end device  x 2    modelo Laptop\n  Total: 6 dispositivos\n------------------------------------------------------------------------\n    1. router      4331         -> (  310,   150)\n    2. router      4331         -> (  906,   150)\n    3. router      4331         -> ( 1502,   150)\n    4. end device  Tablet       -> (  310,   267)\n    5. end device  Laptop       -> (  906,   267)\n    6. end device  Laptop       -> ( 1502,   267)\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse.\n========================================================================",
+    "errors": [],
+    "groups": [
+     {
+      "category": "router",
+      "count": 3,
+      "model": "4331",
+      "word": "routers"
+     },
+     {
+      "category": "end_device",
+      "count": 1,
+      "model": "Tablet",
+      "word": "tablet"
+     },
+     {
+      "category": "end_device",
+      "count": 2,
+      "model": "Laptop",
+      "word": "laptops"
+     }
+    ],
+    "layout_warnings": [],
+    "placements": [
+     {
+      "category": "router",
+      "model": "4331",
+      "x": 310,
+      "y": 150
+     },
+     {
+      "category": "router",
+      "model": "4331",
+      "x": 906,
+      "y": 150
+     },
+     {
+      "category": "router",
+      "model": "4331",
+      "x": 1502,
+      "y": 150
+     },
+     {
+      "category": "end_device",
+      "model": "Tablet",
+      "x": 310,
+      "y": 267
+     },
+     {
+      "category": "end_device",
+      "model": "Laptop",
+      "x": 906,
+      "y": 267
+     },
+     {
+      "category": "end_device",
+      "model": "Laptop",
+      "x": 1502,
+      "y": 267
+     }
+    ],
+    "resolved": [
+     {
+      "category": "router",
+      "count": 3,
+      "model": "4331"
+     },
+     {
+      "category": "end_device",
+      "count": 1,
+      "model": "Tablet"
+     },
+     {
+      "category": "end_device",
+      "count": 2,
+      "model": "Laptop"
+     }
+    ],
+    "warnings": []
+   },
+   "5 PC": {
+    "dry_run_output": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION\n========================================================================\n------------------------------------------------------------------------\n  end device  x 5    modelo PC\n  Total: 5 dispositivos\n------------------------------------------------------------------------\n    1. end device  PC           -> (  191,   150)\n    2. end device  PC           -> (  548,   150)\n    3. end device  PC           -> (  906,   150)\n    4. end device  PC           -> ( 1264,   150)\n    5. end device  PC           -> ( 1621,   150)\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse.\n========================================================================",
+    "errors": [],
+    "groups": [
+     {
+      "category": "end_device",
+      "count": 5,
+      "model": "PC",
+      "word": "pc"
+     }
+    ],
+    "layout_warnings": [],
+    "placements": [
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 191,
+      "y": 150
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 548,
+      "y": 150
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 906,
+      "y": 150
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 1264,
+      "y": 150
+     },
+     {
+      "category": "end_device",
+      "model": "PC",
+      "x": 1621,
+      "y": 150
+     }
+    ],
+    "resolved": [
+     {
+      "category": "end_device",
+      "count": 5,
+      "model": "PC"
+     }
+    ],
+    "warnings": []
+   }
+  },
+  "spread": {
+   "0": [],
+   "1": [
+    50
+   ],
+   "4": [
+    236,
+    682,
+    1130,
+    1576
+   ]
+  }
+ },
+ "dry_run_agrupado": {
+  "declarada": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION (sintaxis por redes)\n========================================================================\n------------------------------------------------------------------------\n  Routers : R01, R02\n  Red1  192.168.10.0/24   switch Sw1\n     PC1        192.168.10.2    -> (432, 414)\n     PC2        192.168.10.3    -> (486, 414)\n  Red2  192.168.20.0/24   switch Sw2\n     PC3        192.168.20.10   -> (1326, 414)\n     PC4        192.168.20.2    -> (1380, 414)\n------------------------------------------------------------------------\n  1) Orden de colocacion:\n    1. router      4331         R01        -> (  459,   180)\n    2. router      4331         R02        -> ( 1353,   180)\n    3. switch      2960         Sw1        -> (  459,   297)\n    4. end_device  PC           PC1        -> (  432,   414)\n    5. end_device  PC           PC2        -> (  486,   414)\n    6. switch      2960         Sw2        -> ( 1353,   297)\n    7. end_device  PC           PC3        -> ( 1326,   414)\n    8. end_device  PC           PC4        -> ( 1380,   414)\n------------------------------------------------------------------------\n  2) Renombrar labels (nombre debajo del icono; NO el hostname CLI)\n     [!] EXPERIMENTAL: offset confirmado a mano solo para router (38px);\n         switch/end_device usan el mismo valor de arranque, sin confirmar:\n     R01        router      label en (  459,   218)  (offset 38px)\n     R02        router      label en ( 1353,   218)  (offset 38px)\n     Sw1        switch      label en (  459,   335)  (offset 38px)\n     PC1        end_device  label en (  432,   452)  (offset 38px)\n     PC2        end_device  label en (  486,   452)  (offset 38px)\n     Sw2        switch      label en ( 1353,   335)  (offset 38px)\n     PC3        end_device  label en ( 1326,   452)  (offset 38px)\n     PC4        end_device  label en ( 1380,   452)  (offset 38px)\n------------------------------------------------------------------------\n  3) Cablear ENLACES (router-router)\n     [!] EXPERIMENTAL: el CALCULO del indice esta listo, pero la mecanica\n         del clic en Packet Tracer todavia NO esta confirmada a mano --\n         por ahora este paso solo CALCULA, no mueve el mouse:\n     R01        interfaz #3  (Se0/1/0)  <->  R02        interfaz #3  (Se0/1/0)   [10.0.0.0/30]\n------------------------------------------------------------------------\n  4) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:\n     \"192.168.10.0/24\"  -> (  459,   156)   [Red1]\n     \"192.168.20.0/24\"  -> ( 1353,   156)   [Red2]\n------------------------------------------------------------------------\n  5) Notas de interfaz (LAN de router + enlaces)  [solo texto, NO configura IP]:\n     R01        \"Gig0/0/0 .1/24\"  -> (  459,   205)\n     R02        \"Gig0/0/0 .1/24\"  -> ( 1353,   205)\n     R01        \"Se0/1/0 .1/30\"  -> (  484,   180)\n     R02        \"Se0/1/0 .2/30\"  -> ( 1328,   180)\n------------------------------------------------------------------------\n  6) Notas de enlace (CIDR completo, punto medio)  [solo texto, NO configura IP]:\n     R01-R02      \"10.0.0.0/30\"  -> (  906,   180)\n------------------------------------------------------------------------\n  7) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):\n     [!] SE OMITE: faltan puntos en data/ip_config_coords.json: desktop_tab, ip_configuration_item, static_radio, close_button, ipv4_address, subnet_mask, default_gateway\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse ni se escribira el registro.\n========================================================================",
+  "redes.txt": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION (sintaxis por redes)\n========================================================================\n------------------------------------------------------------------------\n  Routers : R01, R02\n  Red1  192.168.10.0/24   switch Sw1\n     PC1        192.168.10.2    -> (404, 414)\n     PC2        192.168.10.3    -> (459, 414)\n     PC3        192.168.10.4    -> (514, 414)\n  Red2  192.168.20.0/24   switch Sw2\n     PC4        192.168.20.2    -> (1298, 414)\n     PC5        192.168.20.3    -> (1353, 414)\n     PC6        192.168.20.4    -> (1408, 414)\n------------------------------------------------------------------------\n  1) Orden de colocacion:\n    1. router      4331         R01        -> (  459,   180)\n    2. router      4331         R02        -> ( 1353,   180)\n    3. switch      2960         Sw1        -> (  459,   297)\n    4. end_device  PC           PC1        -> (  404,   414)\n    5. end_device  PC           PC2        -> (  459,   414)\n    6. end_device  PC           PC3        -> (  514,   414)\n    7. switch      2960         Sw2        -> ( 1353,   297)\n    8. end_device  PC           PC4        -> ( 1298,   414)\n    9. end_device  PC           PC5        -> ( 1353,   414)\n   10. end_device  PC           PC6        -> ( 1408,   414)\n------------------------------------------------------------------------\n  2) Renombrar labels (nombre debajo del icono; NO el hostname CLI)\n     [!] EXPERIMENTAL: offset confirmado a mano solo para router (38px);\n         switch/end_device usan el mismo valor de arranque, sin confirmar:\n     R01        router      label en (  459,   218)  (offset 38px)\n     R02        router      label en ( 1353,   218)  (offset 38px)\n     Sw1        switch      label en (  459,   335)  (offset 38px)\n     PC1        end_device  label en (  404,   452)  (offset 38px)\n     PC2        end_device  label en (  459,   452)  (offset 38px)\n     PC3        end_device  label en (  514,   452)  (offset 38px)\n     Sw2        switch      label en ( 1353,   335)  (offset 38px)\n     PC4        end_device  label en ( 1298,   452)  (offset 38px)\n     PC5        end_device  label en ( 1353,   452)  (offset 38px)\n     PC6        end_device  label en ( 1408,   452)  (offset 38px)\n------------------------------------------------------------------------\n  3) Cablear ENLACES (router-router)\n     [!] EXPERIMENTAL: el CALCULO del indice esta listo, pero la mecanica\n         del clic en Packet Tracer todavia NO esta confirmada a mano --\n         por ahora este paso solo CALCULA, no mueve el mouse:\n     (ninguno: no hay bloque 'ENLACES:', o falta 'router_interfaces' en el catalogo)\n------------------------------------------------------------------------\n  4) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:\n     \"192.168.10.0/24\"  -> (  459,   156)   [Red1]\n     \"192.168.20.0/24\"  -> ( 1353,   156)   [Red2]\n------------------------------------------------------------------------\n  5) Notas de interfaz (LAN de router + enlaces)  [solo texto, NO configura IP]:\n     (ninguna: no hay 'RED ... ROUTER' ni bloque 'ENLACES:')\n------------------------------------------------------------------------\n  6) Notas de enlace (CIDR completo, punto medio)  [solo texto, NO configura IP]:\n     (ninguna: no hay bloque 'ENLACES:')\n------------------------------------------------------------------------\n  7) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):\n     [!] SE OMITE: faltan puntos en data/ip_config_coords.json: desktop_tab, ip_configuration_item, static_radio, close_button, ipv4_address, subnet_mask, default_gateway\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse ni se escribira el registro.\n========================================================================",
+  "redes2.txt": "========================================================================\n  pt-autobuild :: PLAN DE COLOCACION (sintaxis por redes)\n========================================================================\n------------------------------------------------------------------------\n  Routers : R01, R02\n  Red1  192.168.10.0/24   switch Sw1\n     PC1        192.168.10.2    -> (208, 414)\n     PC2        192.168.10.3    -> (264, 414)\n  Red2  192.168.20.0/24   switch Sw2\n     PC3        192.168.20.10   -> (654, 414)\n     PC4        192.168.20.2    -> (710, 414)\n  Red3  172.16.0.0/24   switch Sw3\n     PC5        172.16.0.2      -> (1075, 414)\n     PC6        172.16.0.3      -> (1130, 414)\n     PC7        172.16.0.4      -> (1185, 414)\n  Red4  10.0.0.0/24   switch Sw4\n     PC8        10.0.0.2        -> (1576, 414)\n------------------------------------------------------------------------\n  1) Orden de colocacion:\n    1. router      4331         R01        -> (  459,   180)\n    2. router      4331         R02        -> ( 1353,   180)\n    3. switch      2960         Sw1        -> (  236,   297)\n    4. end_device  PC           PC1        -> (  208,   414)\n    5. end_device  PC           PC2        -> (  264,   414)\n    6. switch      2960         Sw2        -> (  682,   297)\n    7. end_device  PC           PC3        -> (  654,   414)\n    8. end_device  PC           PC4        -> (  710,   414)\n    9. switch      2960         Sw3        -> ( 1130,   297)\n   10. end_device  PC           PC5        -> ( 1075,   414)\n   11. end_device  PC           PC6        -> ( 1130,   414)\n   12. end_device  PC           PC7        -> ( 1185,   414)\n   13. switch      2960         Sw4        -> ( 1576,   297)\n   14. end_device  PC           PC8        -> ( 1576,   414)\n------------------------------------------------------------------------\n  2) Renombrar labels (nombre debajo del icono; NO el hostname CLI)\n     [!] EXPERIMENTAL: offset confirmado a mano solo para router (38px);\n         switch/end_device usan el mismo valor de arranque, sin confirmar:\n     R01        router      label en (  459,   218)  (offset 38px)\n     R02        router      label en ( 1353,   218)  (offset 38px)\n     Sw1        switch      label en (  236,   335)  (offset 38px)\n     PC1        end_device  label en (  208,   452)  (offset 38px)\n     PC2        end_device  label en (  264,   452)  (offset 38px)\n     Sw2        switch      label en (  682,   335)  (offset 38px)\n     PC3        end_device  label en (  654,   452)  (offset 38px)\n     PC4        end_device  label en (  710,   452)  (offset 38px)\n     Sw3        switch      label en ( 1130,   335)  (offset 38px)\n     PC5        end_device  label en ( 1075,   452)  (offset 38px)\n     PC6        end_device  label en ( 1130,   452)  (offset 38px)\n     PC7        end_device  label en ( 1185,   452)  (offset 38px)\n     Sw4        switch      label en ( 1576,   335)  (offset 38px)\n     PC8        end_device  label en ( 1576,   452)  (offset 38px)\n------------------------------------------------------------------------\n  3) Cablear ENLACES (router-router)\n     [!] EXPERIMENTAL: el CALCULO del indice esta listo, pero la mecanica\n         del clic en Packet Tracer todavia NO esta confirmada a mano --\n         por ahora este paso solo CALCULA, no mueve el mouse:\n     (ninguno: no hay bloque 'ENLACES:', o falta 'router_interfaces' en el catalogo)\n------------------------------------------------------------------------\n  4) Notas (CIDR por red)  [clic de foco -> 'n' -> clic -> texto -> Escape]:\n     \"192.168.10.0/24\"  -> (  236,   156)   [Red1]\n     \"192.168.20.0/24\"  -> (  682,   156)   [Red2]\n     \"172.16.0.0/24\"  -> ( 1130,   156)   [Red3]\n     \"10.0.0.0/24\"  -> ( 1576,   156)   [Red4]\n------------------------------------------------------------------------\n  5) Notas de interfaz (LAN de router + enlaces)  [solo texto, NO configura IP]:\n     (ninguna: no hay 'RED ... ROUTER' ni bloque 'ENLACES:')\n------------------------------------------------------------------------\n  6) Notas de enlace (CIDR completo, punto medio)  [solo texto, NO configura IP]:\n     (ninguna: no hay bloque 'ENLACES:')\n------------------------------------------------------------------------\n  7) Configuracion IP de las PCs  (DESPUES de colocar todo y las notas):\n     [!] SE OMITE: faltan puntos en data/ip_config_coords.json: desktop_tab, ip_configuration_item, static_radio, close_button, ipv4_address, subnet_mask, default_gateway\n------------------------------------------------------------------------\n  DRY-RUN: no se movera el mouse ni se escribira el registro.\n========================================================================"
+ }
+}

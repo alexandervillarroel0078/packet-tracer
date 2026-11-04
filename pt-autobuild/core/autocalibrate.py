@@ -13,7 +13,7 @@ Flujo (ver run_autocalibrate):
        reference_images/ y la busca (cv2.matchTemplate) en una captura NUEVA. Si la
        confianza es baja reintenta (max. 2) pidiendo a la IA que afine sobre un
        recorte ampliado de esa zona; si sigue fallando -> "requiere manual".
-    6. Guarda en data/coords.json (mismo formato que calibrate.py) + una seccion
+    6. Guarda en data/coords.json (mismo formato de siempre) + una seccion
        "autocalibrate" con resolucion, escala DPI, ventana y estado por elemento.
 
 Limite honesto de la verificacion: matchTemplate comprueba que la zona es
@@ -34,13 +34,14 @@ import sys
 import tempfile
 from typing import NamedTuple
 
-from core.paths import (CABLE_COORDS_PATH, COORDS_PATH, IP_CONFIG_COORDS_PATH,
-                        PROJECT_ROOT, REFERENCE_IMAGES_DIR)
+from core.errors import PTError
+from core.log import emit
+from core.paths import (CABLE_COORDS_PATH, COORDS_PATH, ENV_PATH, IP_CONFIG_COORDS_PATH,
+                        REFERENCE_IMAGES_DIR)
 
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 DEFAULT_MODEL = "claude-sonnet-5-5"
-ENV_PATH = os.path.join(PROJECT_ROOT, ".env")
 
 META_KEY = "autocalibrate"
 META_VERSION = 1
@@ -56,7 +57,7 @@ WINDOW_TOLERANCE = 2      # px de diferencia aceptados en la posicion de la vent
 DPI_TOLERANCE = 0.01
 API_TIMEOUT = 90
 
-# elemento -> (seccion, clave) en coords.json (mismo esquema que calibrate.py)
+# elemento -> (seccion, clave) en coords.json (mismo esquema de siempre)
 ELEMENTS = {
     "search_field": ("search_field", None),
     "filtered_result": ("filtered_result", None),
@@ -117,7 +118,7 @@ MENU_COL_TOL = 20
 MENU_MAX_OFFSET = 600
 
 
-class AutoCalibrateError(Exception):
+class AutoCalibrateError(PTError):
     """Error esperable (config, red, API, respuesta invalida) con mensaje claro."""
 
 
@@ -705,7 +706,7 @@ def _zoom_rect(point, screen_size):
     return [l, t, w, h]
 
 
-def verify_and_refine(el, point, shot, ppu, screen_size, creds, dry_run, log=print):
+def verify_and_refine(el, point, shot, ppu, screen_size, creds, dry_run, log=emit):
     """
     Verifica `point` (pantalla) del Element `el`, con hasta MAX_RETRIES reintentos de
     refinamiento por IA sobre un recorte ampliado. `shot`/`ppu` es la captura de la que
@@ -766,9 +767,9 @@ def _env_matches(meta, env):
 
 def _manual_hint(el):
     if el.file == "coords":
-        return f"python calibrate.py --manual {el.name}"
-    return {"cable": "python cable_link.py --calibrate --tipo <TIPO> --router <R>",
-            "ip": "python configure_ip.py --calibrate"}[el.file]
+        return f"calibralo a mano en la pestana Calibracion ({el.name})"
+    return {"cable": "calibralo a mano en la pestana Calibracion (cables)",
+            "ip": "calibralo a mano en la pestana Calibracion (ventana IP)"}[el.file]
 
 
 STATUS_LABEL = {"ok": "OK", "manual": "requiere manual", "unverified": "sin verificar"}
@@ -828,7 +829,7 @@ def _print_table(rows, log):
 
 
 def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST_MODEL,
-                      log=print):
+                      log=emit):
     """
     Ejecuta la autocalibracion de los `groups` (main = coords.json, cable =
     cable_coords.json, ip = ip_config_coords.json). Devuelve 0 si todo quedo calibrado
@@ -994,7 +995,7 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     if absent:
         code = 1
         log("\n  Faltan estados de la UI (no se adivino nada). Preparalos y reejecuta con "
-            "--only <grupo>:")
+            "solo ese grupo:")
         for s, names in absent.items():
             log(f"    {s}: {STATE_HINTS[s]}")
     if code == 0:
@@ -1002,7 +1003,7 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     return code
 
 
-def run_check(groups=GROUPS, dry_run=False, log=print):
+def run_check(groups=GROUPS, dry_run=False, log=emit):
     """
     --check: SIN API. Re-verifica con matchTemplate todos los puntos guardados y reporta
     cuales ya no coinciden. Actualiza el estado guardado salvo con --dry-run.
@@ -1064,7 +1065,7 @@ def run_check(groups=GROUPS, dry_run=False, log=print):
             coords_io.save_coords(FILE_PATHS[f], datas[f])
     bad = [n for n, _f, st in table if st == "manual"]
     if bad:
-        log("\n  Requieren recalibrar: " + ", ".join(bad) + "   (python calibrate.py --auto)")
+        log("\n  Requieren recalibrar: " + ", ".join(bad) + "   (Autocalibrar, en la pestana Calibracion)")
         return 1
     log("\n  Todo lo verificable coincide.")
     return 0

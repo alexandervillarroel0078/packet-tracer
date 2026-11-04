@@ -11,24 +11,23 @@ lo mismo: comprobar que un punto cae dentro del lienzo o sacar uno al azar.
 """
 
 import random
-import sys
 
 from core import coords as coords_io
+from core.errors import NotCalibratedError
+from core.log import emit
 from core.paths import COORDS_PATH
 
 
 def load_box():
-    """(x0, y0, x1, y1) normalizado. sys.exit(1) con instrucciones si falta."""
+    """(x0, y0, x1, y1) normalizado. NotCalibratedError si falta calibrar el lienzo."""
     coords = coords_io.load_coords(COORDS_PATH)
     canvas = coords.get("canvas") or {}
     tl, br = canvas.get("top_left"), canvas.get("bottom_right")
     if not (isinstance(tl, (list, tuple)) and isinstance(br, (list, tuple))
             and len(tl) == 2 and len(br) == 2):
-        print(f"ERROR: faltan canvas.top_left / canvas.bottom_right en {COORDS_PATH}")
-        print("  Calibra las esquinas:")
-        print("    python calibrate.py --manual canvas_top_left")
-        print("    python calibrate.py --manual canvas_bottom_right")
-        sys.exit(1)
+        raise NotCalibratedError(
+            f"faltan canvas.top_left / canvas.bottom_right en {COORDS_PATH}. "
+            "Calibra las esquinas del lienzo en la pestana Calibracion.")
     x0, x1 = sorted((int(round(tl[0])), int(round(br[0]))))
     y0, y1 = sorted((int(round(tl[1])), int(round(br[1]))))
     return x0, y0, x1, y1
@@ -44,7 +43,7 @@ def random_in_box(box, margin):
     ax0, ax1 = x0 + margin, x1 - margin
     ay0, ay1 = y0 + margin, y1 - margin
     if ax0 > ax1 or ay0 > ay1:
-        print(f"  Aviso: el canvas es mas chico que 2*margen ({margin}px); "
-              f"uso el centro.")
+        emit(f"  Aviso: el canvas es mas chico que 2*margen ({margin}px); "
+             f"uso el centro.")
         return (x0 + x1) // 2, (y0 + y1) // 2
     return random.randint(ax0, ax1), random.randint(ay0, ay1)
