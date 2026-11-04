@@ -56,7 +56,7 @@ def _iter_points(obj, prefix=""):
     out = []
     if isinstance(obj, dict):
         for k, v in obj.items():
-            if k == "screen_size":
+            if k in ("screen_size", "autocalibrate"):
                 continue
             name = k if not prefix else f"{prefix}.{k}"
             out.extend(_iter_points(v, name))
@@ -227,6 +227,11 @@ class PanelControl:
         f5 = ttk.LabelFrame(tab_calib, text="Calibracion (abre una consola aparte)")
         f5.pack(fill="x", **pad)
         for text, args in (
+            ("Autocalibrar (IA)", ["calibrate.py", "--auto", "--pause"]),
+            ("Autocalibrar (IA) - solo mostrar, sin guardar",
+             ["calibrate.py", "--auto", "--dry-run", "--pause"]),
+            ("Re-verificar puntos guardados (--check, sin API)",
+             ["calibrate.py", "--check", "--pause"]),
             ("Calibrar buscador / lienzo", ["calibrate.py"]),
             ("Calibrar esquina superior-izquierda del lienzo",
              ["calibrate.py", "--manual", "canvas_top_left"]),
@@ -250,6 +255,24 @@ class PanelControl:
             f5, text="Mostrar overlay de topologia",
             command=self._toggle_topology_overlay)
         self.topo_overlay_btn.pack(fill="x", padx=6, pady=(0, 4))
+
+        # Estado por elemento (OK / requiere manual / sin verificar), de core.autocalibrate
+        f6 = ttk.LabelFrame(tab_calib, text="Estado de la calibracion por elemento")
+        f6.pack(fill="x", **pad)
+        self.cal_tree = ttk.Treeview(f6, columns=("archivo", "estado"), height=9)
+        self.cal_tree.heading("#0", text="Elemento")
+        self.cal_tree.heading("archivo", text="Archivo")
+        self.cal_tree.heading("estado", text="Estado")
+        self.cal_tree.column("#0", width=150, stretch=True)
+        self.cal_tree.column("archivo", width=50, stretch=False)
+        self.cal_tree.column("estado", width=100, stretch=False)
+        self.cal_tree.tag_configure("ok", foreground="#1a8f2e")
+        self.cal_tree.tag_configure("manual", foreground="#c62828")
+        self.cal_tree.tag_configure("unverified", foreground="#b8860b")
+        self.cal_tree.pack(fill="x", padx=6, pady=(6, 2))
+        ttk.Button(f6, text="Actualizar estado",
+                   command=self._refresh_cal_status).pack(fill="x", padx=6, pady=(0, 6))
+        self._refresh_cal_status()
 
         # recordar la ultima pestana activa entre sesiones (extra, no critico)
         try:
@@ -342,6 +365,23 @@ class PanelControl:
             pass
 
     # ----- helpers de la GUI -----------------------------------------
+    def _refresh_cal_status(self):
+        """Lee data/*.json (sin pantalla ni API) y pinta OK / requiere manual / sin verificar."""
+        try:
+            from core import autocalibrate
+            rows = autocalibrate.collect_status()
+        except Exception as e:  # noqa: BLE001 - no debe tumbar el panel
+            self._emit(f"[calibracion] no se pudo leer el estado: {e}")
+            return
+        self.cal_tree.delete(*self.cal_tree.get_children())
+        for r in rows:
+            self.cal_tree.insert("", "end", text=r["name"],
+                                 values=(r["file"], r["label"]), tags=(r["status"],))
+        counts = {k: sum(1 for r in rows if r["status"] == k)
+                  for k in ("ok", "manual", "unverified")}
+        self._emit(f"[calibracion] OK={counts['ok']}  requiere manual={counts['manual']}  "
+                   f"sin verificar={counts['unverified']}")
+
     def _toggle_topmost(self):
         self.root.attributes("-topmost", self.topmost_var.get())
 

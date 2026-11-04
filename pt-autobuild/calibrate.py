@@ -20,6 +20,10 @@ Uso:
     python calibrate.py --manual filtered_result     # recapturar solo ese punto
     python calibrate.py --manual canvas_top_left     # forzar una esquina a mano
     python calibrate.py --list             # comprobar las imagenes de referencia
+    python calibrate.py --auto             # autocalibracion con IA (ver README)
+    python calibrate.py --auto --dry-run   # solo muestra lo detectado, sin guardar
+    python calibrate.py --auto --only main # solo coords.json (main | cable | ip | all)
+    python calibrate.py --check            # sin API: re-verifica lo guardado
 
 Imagenes de referencia (reference_images/, PNG, nombres EXACTOS):
     search_field.png   recorte del campo "Search for device"
@@ -372,6 +376,30 @@ def print_summary(data, saved_ok):
     print("=" * 70)
 
 
+def run_ai_auto(args):
+    """--auto / --check (core/autocalibrate.py)."""
+    from core import autocalibrate as ac
+    mode = "VERIFICACION (--check, sin API)" if args.check else "AUTOCALIBRACION CON IA"
+    print("=" * 70)
+    print(f"  pt-autobuild :: {mode}" + ("  (dry-run)" if args.dry_run else ""))
+    print("=" * 70)
+    print("  Ten Packet Tracer visible y los menus/ventanas necesarios abiertos (ver README).")
+    code = 1
+    try:
+        groups = ac.parse_groups(args.only)
+        if args.check:
+            code = ac.run_check(groups=groups, dry_run=args.dry_run)
+        else:
+            code = ac.run_autocalibrate(dry_run=args.dry_run, force=args.force,
+                                        groups=groups, test_model=args.test_model)
+    except ac.AutoCalibrateError as e:
+        print(f"\n  ERROR: {e}")
+        code = 2
+    if args.pause:
+        input("\n  ENTER para cerrar...")
+    sys.exit(code)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Calibracion minima para pt-autobuild.")
     ap.add_argument("--confidence", type=float, default=0.85,
@@ -384,9 +412,34 @@ def main():
                     help="Captura a mano un punto: " + ", ".join(MANUAL_KEYS))
     ap.add_argument("--list", action="store_true",
                     help="Solo comprobar las imagenes de referencia.")
+    ap.add_argument("--auto", action="store_true",
+                    help="Autocalibracion con IA (vision). Requiere ANTHROPIC_API_KEY en .env.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Con --auto: solo muestra lo detectado, sin guardar nada.")
+    ap.add_argument("--force", action="store_true",
+                    help="Con --auto: ignora la cache y vuelve a llamar a la API.")
+    ap.add_argument("--check", action="store_true",
+                    help="Sin API: re-verifica con matchTemplate los puntos guardados y "
+                         "reporta cuales ya no coinciden.")
+    ap.add_argument("--only", metavar="GRUPOS", default="all",
+                    help="Con --auto/--check: grupos a procesar, separados por coma: "
+                         "main (coords.json), cable (cable_coords.json), ip "
+                         "(ip_config_coords.json) o all (def.).")
+    ap.add_argument("--test-model", default="2911", metavar="MODELO",
+                    help="Con --auto: modelo que se escribe en el buscador para calibrar "
+                         "filtered_result (def. 2911).")
+    ap.add_argument("--pause", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
-    if args.list:
+    if args.auto and args.check:
+        ap.error("--auto y --check son excluyentes")
+    if (args.dry_run or args.force) and not (args.auto or args.check):
+        ap.error("--dry-run y --force solo se usan junto con --auto (o --check)")
+    if args.force and args.check:
+        ap.error("--force no aplica a --check")
+    if args.auto or args.check:
+        run_ai_auto(args)
+    elif args.list:
         run_list()
     elif args.manual:
         run_manual(args.manual)

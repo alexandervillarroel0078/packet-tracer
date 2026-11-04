@@ -8,3 +8,9 @@ __pycache__/
 
 # compat: coords.json suelto en la raiz de versiones antiguas
 /coords.json
+
+# Clave de API local (copia .env.example a .env)
+.env
+
+# Recortes generados por la autocalibracion (especificos de cada maquina)
+/reference_images/auto_*.png
