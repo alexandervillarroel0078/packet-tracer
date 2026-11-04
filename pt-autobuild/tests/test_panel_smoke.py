@@ -11,7 +11,7 @@ tk = pytest.importorskip("tkinter")
 
 from core import paths  # noqa: E402
 from panel.controllers.runner import ActionRunner  # noqa: E402
-from panel.main import TABS, PanelApp  # noqa: E402
+from panel.main import ADVANCED_TABS, TABS, PanelApp  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -54,8 +54,11 @@ def log_text(app):
 
 def test_carga_las_cuatro_pestanas(app):
     names = [app.nb.tab(i, "text") for i in range(app.nb.index("end"))]
-    assert names == list(TABS) == ["Colocar", "Configurar", "Calibracion", "Ajustes"]
-    assert set(app.views) == set(TABS)
+    assert names == list(TABS) == ["Simple", "Avanzado", "Ajustes"]
+    sub = [app.adv_nb.tab(i, "text") for i in range(app.adv_nb.index("end"))]
+    assert sub == list(ADVANCED_TABS) == ["Colocar", "Configurar", "Calibracion"]
+    assert set(app.views) == set(TABS) - {"Avanzado"} | set(ADVANCED_TABS)
+    assert app.nb.tab(app.nb.select(), "text") == "Simple"       # modo simple por defecto
 
 
 def test_modo_seguro_por_defecto(app):
@@ -218,3 +221,28 @@ def test_ajustes_selector_de_proveedor_guarda_y_conserva_cada_clave(app, monkeyp
     assert "OpenAI" in log and "Anthropic" in log
     assert "clave-openai-1111" not in log and "clave-anthropic-2222" not in log
     assert os.path.exists(paths.ENV_PATH)
+
+
+def test_simple_ejemplo_gris_dry_run_y_estado(app):
+    s = app.views["Simple"]
+    assert s.dry_var.get() is True and s.btn_build.real is False
+    assert s.btn_build.cget("text") == "Construir"
+    assert s.get_text() == "" and "1 switch, 1 PC" in s.text.get("1.0", "end")   # ejemplo, no valor
+    s._hide_placeholder()
+    s.text.insert("1.0", "2 routers")
+    assert s.get_text() == "2 routers"
+    s.dry_var.set(False)
+    assert s.btn_build.real is True
+    assert "Calibración:" in app.calib_label.cget("text") and "API:" in app.api_label.cget("text")
+    # sin calibrar aparece el boton Autocalibrar junto al estado
+    assert app.btn_autocal.winfo_manager() == "pack"
+
+
+def test_simple_construir_sin_calibrar_dry_run_explica_en_lenguaje_simple(app):
+    s = app.views["Simple"]
+    s._hide_placeholder()
+    s.text.insert("1.0", "1 switch, 1 PC")
+    app.guard(s._build)()
+    pump(app)
+    text = log_text(app)
+    assert "Voy a calibrar" in text and "search_field" not in text

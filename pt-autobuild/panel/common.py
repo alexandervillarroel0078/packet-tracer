@@ -103,8 +103,8 @@ class ModeButton(tk.Button):
 
     def __init__(self, parent, text_dry, text_real, command, **kw):
         self.text_dry, self.text_real = text_dry, text_real
-        super().__init__(parent, command=command, font=FONT_BTN, fg="white",
-                         relief="raised", **kw)
+        kw.setdefault("font", FONT_BTN)
+        super().__init__(parent, command=command, fg="white", relief="raised", **kw)
         self.real = False
         self.set_real(False)
 

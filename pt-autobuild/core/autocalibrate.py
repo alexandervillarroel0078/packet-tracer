@@ -66,12 +66,25 @@ ELEMENTS = {
 # existe en pantalla tras filtrar el buscador (si no se ve, queda para manual).
 REQUIRED = ("search_field", "canvas_top_left", "canvas_bottom_right")
 
+# En la pantalla del usuario, al filtrar con el buscador los resultados aparecen en la fila de
+# iconos de dispositivos que queda JUSTO ENCIMA del campo de busqueda (ni a su derecha ni debajo).
+FILTERED_RESULT_DESC = (
+    "el PRIMER icono de la fila superior de resultados filtrados, justo ENCIMA del campo de "
+    "busqueda (la fila de iconos de dispositivos que esta inmediatamente arriba del buscador, "
+    "empezando por la izquierda). NO esta a la derecha ni debajo del buscador. Si esa fila "
+    "no muestra ningun icono, devuelve null"
+)
+# Geometria (unidades de pantalla) respecto al CENTRO del buscador: el resultado debe estar
+# ENCIMA (al menos MIN_ABOVE y como mucho MAX_ABOVE) y dentro del ancho del panel de
+# dispositivos, que se aproxima por +-MAX_DX alrededor del centro del buscador.
+FILTERED_MIN_ABOVE = 8
+FILTERED_MAX_ABOVE = 220
+FILTERED_MAX_DX = 220
+
 DESCRIPTIONS = {
     "search_field": 'centro del campo de texto "Search for device" (buscador de '
                     "dispositivos, abajo a la izquierda, con la lupa)",
-    "filtered_result": "centro del UNICO icono de dispositivo que queda visible en "
-                       "la paleta inferior despues de filtrar con el buscador. "
-                       "Si no hay un unico icono filtrado, devuelve null",
+    "filtered_result": "centro de " + FILTERED_RESULT_DESC,
     "canvas_top_left": "esquina superior izquierda del area de trabajo (lienzo "
                        "blanco/cuadriculado donde se sueltan los dispositivos), "
                        "justo dentro del area, bajo la barra de herramientas superior",
@@ -770,17 +783,53 @@ STATUS_LABEL = {"ok": "OK", "manual": "requiere manual", "unverified": "sin veri
 # =====================================================================
 # Orquestacion
 # =====================================================================
-def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log):
+def filtered_point_error(point, search_point, min_above=FILTERED_MIN_ABOVE,
+                         max_above=FILTERED_MAX_ABOVE, max_dx=FILTERED_MAX_DX):
+    """
+    None si el punto de `filtered_result` es plausible; si no, el motivo del rechazo.
+    Debe estar ENCIMA del centro del buscador (fila de resultados) y dentro del ancho del
+    panel de dispositivos (|dx| <= max_dx). Uno al nivel del buscador o por debajo es la lista
+    de dispositivos o el propio campo, no un resultado.
+    """
+    x, y = point
+    sx, sy = search_point
+    if y > sy - min_above:
+        return (f"el punto ({x}, {y}) no esta encima del buscador (y={sy}): "
+                "el resultado debe estar en la fila de arriba")
+    if y < sy - max_above:
+        return f"el punto ({x}, {y}) esta demasiado arriba del buscador (y={sy})"
+    if abs(x - sx) > max_dx:
+        return (f"el punto ({x}, {y}) cae fuera del ancho del panel de dispositivos "
+                f"(x={sx}+-{max_dx})")
+    return None
+
+
+def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log, shot_ppu=None):
     """
     filtered_result automatico: clic en search_field, escribe un modelo de prueba, espera,
     nueva captura y pide a la IA SOLO el primer resultado filtrado. Siempre limpia el buscador.
     """
     sp = results["search_field"]["point"]
     if dry_run:
-        log(f"  [dry-run] filtered_result: se haria clic en search_field {tuple(sp)}, se "
-            f"escribiria '{test_model}', se esperarian {FILTER_WAIT:g}s, se capturaria, se "
-            "pediria a la IA el primer resultado y se limpiaria el buscador. No se toca la app.")
-        return {"status": "unverified", "reason": "dry-run: no se escribio en la app"}
+        log("  [dry-run] filtered_result: NO se escribe en el buscador; se busca el resultado "
+            "en la captura actual (si ya filtraste a mano, lo ubica; si no, queda sin ver).")
+        if shot_ppu is None:
+            return {"status": "unverified", "reason": "dry-run: no se escribio en la app"}
+        shot, ppu = shot_ppu
+        crop, crop_px = crop_units(shot, ppu, env["window"])
+        sent = compute_send_size(*crop_px)
+        pts, _w = ask_points(cfg, crop, sent, (el.ask,), {el.ask: FILTERED_RESULT_DESC})
+        if el.ask not in pts:
+            return {"status": "unverified",
+                    "reason": "dry-run: no hay resultados filtrados visibles en la captura"}
+        upp = compute_units_per_px(crop_px, sent, ppu)
+        pt = list(image_to_screen(pts[el.ask][0], pts[el.ask][1], env["window"][:2], upp))
+        bad = filtered_point_error(pt, sp)
+        if bad:
+            log(f"  [!] filtered_result rechazado: {bad}")
+            return {"status": "manual", "point": pt, "reason": bad, "rejected": True}
+        return {"status": "unverified", "point": pt,
+                "reason": "dry-run: detectado, sin verificar ni guardar"}
     from core import dpi_aware  # noqa: F401  fija la DPI awareness; debe importarse antes de pyautogui
     import time
     import pyautogui
@@ -798,13 +847,16 @@ def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log):
         shot, ppu = capture()
         crop, crop_px = crop_units(shot, ppu, env["window"])
         sent = compute_send_size(*crop_px)
-        desc = (f"centro del PRIMER dispositivo de los resultados filtrados en la paleta "
-                f"inferior tras escribir '{test_model}' en el buscador")
+        desc = (f"centro de {FILTERED_RESULT_DESC} (tras escribir '{test_model}' en el buscador)")
         pts, _w = ask_points(cfg, crop, sent, (el.ask,), {el.ask: desc})
         if el.ask not in pts:
             return {"status": "manual", "reason": "la IA no vio ningun resultado filtrado"}
         upp = compute_units_per_px(crop_px, sent, ppu)
         pt = list(image_to_screen(pts[el.ask][0], pts[el.ask][1], env["window"][:2], upp))
+        bad = filtered_point_error(pt, sp)
+        if bad:
+            log(f"  [!] filtered_result rechazado: {bad}")
+            return {"status": "manual", "point": pt, "reason": bad, "rejected": True}
         return verify_and_refine(el._replace(desc=desc), pt, shot, ppu, env["resolution"],
                                  cfg, dry_run, log)
     finally:
@@ -820,12 +872,14 @@ def _print_table(rows, log):
 
 
 def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST_MODEL,
-                      log=emit):
+                      log=emit, detected_out=None):
     """
     Ejecuta la autocalibracion de los `groups` (main = coords.json, cable =
     cable_coords.json, ip = ip_config_coords.json). Devuelve 0 si todo quedo calibrado
     (o la cache era valida), 1 si quedan elementos por calibrar o falta abrir algun
     estado de la UI. Lanza AutoCalibrateError ante problemas de config / red / API.
+    detected_out (dict, opcional): se llena con {nombre: {"point": [x, y], "rejected": bool}}
+    de cada punto que la IA ubico (tambien en dry-run), para dibujarlos en un overlay.
     """
     import copy
     from core import coords as coords_io
@@ -942,9 +996,15 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
             log("  filtered_result omitido: ya tiene valor (usa --force para recalcularlo).")
         else:
             results["filtered_result"] = _calibrate_filtered(
-                fr, results, creds, env, test_model, dry_run, log)
+                fr, results, creds, env, test_model, dry_run, log, (shot, ppu))
             r = results["filtered_result"]
             log(f"    {'filtered_result':<24} {r['status'].upper():<7} conf={r.get('confidence', '-')}")
+
+    if detected_out is not None:
+        detected_out.clear()
+        for name, r in results.items():
+            if r.get("point"):
+                detected_out[name] = {"point": list(r["point"]), "rejected": bool(r.get("rejected"))}
 
     # --- construir el resultado por archivo -------------------------------------------------
     outputs, table, unresolved = {}, [], []

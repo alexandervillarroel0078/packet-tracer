@@ -165,6 +165,10 @@ class CalibracionView:
                                       self.btn_ov_topo)
 
     def on_done(self, status, label):
+        if label.startswith("Solo mostrar") and status == "ok":
+            points = self.c.overlay_detected()
+            if points:
+                self.overlays.show_detected(points, self.btn_ov_cal, self.btn_ov_topo)
         self.ref_cb.configure(values=self.c.list_devices())
         self.refresh_status()
 

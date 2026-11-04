@@ -1,17 +1,15 @@
 """
-panel.main - ventana principal de pt-autobuild: ensambla las 4 pestanas, el log en vivo, la
-barra de estado (cuenta regresiva, progreso, DETENER) y conecta los eventos del runner.
+panel.main - ventana principal de pt-autobuild: una linea de estado arriba, 3 pestanas
+(Simple por defecto, Avanzado con todo lo demas, Ajustes), el log en vivo, la barra de estado
+(cuenta regresiva, progreso, DETENER) y la conexion de los eventos del runner.
 
 Toda la logica esta en panel/controllers (sin tkinter); las vistas solo dibujan.
 """
 
-import json
-import os
 import tkinter as tk
 from tkinter import ttk
 
 from core import log as core_log
-from core import paths
 from core.errors import PTError
 from panel.ajustes import AjustesView
 from panel.calibracion import CalibracionView
@@ -24,8 +22,14 @@ from panel.controllers.calibracion import CalibracionController
 from panel.controllers.colocar import ColocarController
 from panel.controllers.configurar import ConfigurarController
 from panel.controllers.runner import ActionRunner
+from panel.controllers.simple import SimpleController
+from panel.simple import SimpleView
 
-TABS = ("Colocar", "Configurar", "Calibracion", "Ajustes")
+TABS = ("Simple", "Avanzado", "Ajustes")
+ADVANCED_TABS = ("Colocar", "Configurar", "Calibracion")      # sub-pestanas de Avanzado
+
+COLOR_OK = "#2e7d32"
+COLOR_BAD = "#c62828"
 
 
 class PanelApp:
@@ -36,7 +40,7 @@ class PanelApp:
         self._actions = []          # widgets que se deshabilitan mientras corre algo
         self.views = {}
 
-        root.title("pt-autobuild :: panel")
+        root.title("pt-autobuild")
         root.attributes("-topmost", True)
         root.geometry("420x780")
         root.minsize(420, 640)
@@ -46,7 +50,7 @@ class PanelApp:
         except tk.TclError:
             pass
 
-        self._build_top()
+        self._build_status_line()
         self.nb = ttk.Notebook(root)
         self.nb.pack(fill="both", expand=True, padx=8, pady=4)
         self._scroll_canvases = []
@@ -60,33 +64,84 @@ class PanelApp:
         core_log.set_sink(self.runner.log)    # los mensajes de core/ van al log del panel
 
         self.controllers = {
+            "Simple": SimpleController(self.shared),
             "Colocar": ColocarController(self.shared),
             "Configurar": ConfigurarController(self.shared),
             "Calibracion": CalibracionController(self.shared),
             "Ajustes": AjustesController(self.shared),
         }
         view_classes = {"Colocar": ColocarView, "Configurar": ConfigurarView,
-                        "Calibracion": CalibracionView, "Ajustes": AjustesView}
-        for name in TABS:
-            inner, cv = make_scroll_tab(self.nb, name)
-            self._scroll_canvases.append(cv)
+                        "Calibracion": CalibracionView}
+
+        inner = self._add_tab(self.nb, "Simple")
+        self.views["Simple"] = SimpleView(inner, self.controllers["Simple"], self)
+
+        adv = self._add_tab(self.nb, "Avanzado")
+        self._build_window_options(adv)
+        self.adv_nb = ttk.Notebook(adv)
+        self.adv_nb.pack(fill="both", expand=True, padx=4, pady=4)
+        for name in ADVANCED_TABS:
+            inner = self._add_tab(self.adv_nb, name)
             self.views[name] = view_classes[name](inner, self.controllers[name], self)
 
-        self._restore_tab()
-        self.nb.bind("<<NotebookTabChanged>>", self._save_tab)
+        inner = self._add_tab(self.nb, "Ajustes")
+        self.views["Ajustes"] = AjustesView(inner, self.controllers["Ajustes"], self)
+
+        # la topologia de las acciones avanzadas es la de Avanzado > Colocar o, si esta
+        # vacia, la que se escribio en la pantalla simple
+        colocar, simple = self.views["Colocar"], self.views["Simple"]
+        self.shared.topology_getter = lambda: colocar.get_text() or simple.get_text()
+
         root.bind_all("<MouseWheel>", self._on_wheel)
         root.protocol("WM_DELETE_WINDOW", self.close)
 
-        self.notify("Panel listo. Dry-run MARCADO por defecto: nada se mueve hasta que lo "
-                    "desmarques.")
-        self.notify("Failsafe: mouse a la esquina superior izquierda = abortar. "
-                    "DETENER corta la cuenta regresiva y la accion.")
+        self.notify("Listo. Escribe tu topología y pulsa Construir. «Dry-run» está marcado: "
+                    "no se moverá el mouse hasta que lo desmarques.")
+        self.notify("Para abortar: DETENER, o lleva el mouse a la esquina superior izquierda.")
+        self.refresh_status()
         self.root.after(80, self._poll)
 
-    # ----- barra superior --------------------------------------------------------------------
-    def _build_top(self):
+    def _add_tab(self, notebook, name):
+        inner, cv = make_scroll_tab(notebook, name)
+        self._scroll_canvases.append(cv)
+        return inner
+
+    # ----- linea de estado (arriba) --------------------------------------------------------------
+    def _build_status_line(self):
         top = ttk.Frame(self.root)
-        top.pack(fill="x", padx=8, pady=4)
+        top.pack(fill="x", padx=8, pady=(6, 0))
+        font = ("Segoe UI", 9, "bold")
+        self.calib_label = tk.Label(top, text="Calibración: ...", font=font)
+        self.calib_label.pack(side="left")
+        self.api_label = tk.Label(top, text="API: ...", font=font)
+        self.api_label.pack(side="left", padx=(14, 0))
+        self.btn_autocal = ttk.Button(top, text="Autocalibrar",
+                                      command=self.guard(self._autocalibrate))
+        self.register_action(self.btn_autocal)
+
+    def refresh_status(self):
+        """Actualiza la linea de estado: calibracion y clave de la IA."""
+        try:
+            info = self.controllers["Simple"].status()
+        except Exception:  # noqa: BLE001 - el estado nunca debe romper el panel
+            return
+        self.calib_label.configure(text=info.calibration_text,
+                                   fg=COLOR_OK if info.calibration_ok else COLOR_BAD)
+        self.api_label.configure(text=info.api_text, fg=COLOR_OK if info.api_ok else COLOR_BAD)
+        if info.calibration_ok:
+            self.btn_autocal.pack_forget()
+        else:
+            self.btn_autocal.pack(side="right")
+
+    def _autocalibrate(self):
+        self.controllers["Simple"].autocalibrate(dry_run=self.views["Simple"].dry_var.get())
+
+    # ----- opciones de ventana (dentro de Avanzado) -------------------------------------------------
+    def _build_window_options(self, parent):
+        box = ttk.LabelFrame(parent, text="Ventana")
+        box.pack(fill="x", padx=4, pady=4)
+        top = ttk.Frame(box)
+        top.pack(fill="x", padx=6, pady=4)
         self.topmost_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(top, text="Siempre encima", variable=self.topmost_var,
                         command=lambda: self.root.attributes("-topmost", self.topmost_var.get())
@@ -96,8 +151,8 @@ class PanelApp:
         self.countdown_var.trace_add("write", self._on_countdown)
         ttk.Spinbox(top, from_=0, to=15, width=3, textvariable=self.countdown_var,
                     justify="center").pack(side="left")
-        opa = ttk.Frame(self.root)
-        opa.pack(fill="x", padx=8)
+        opa = ttk.Frame(box)
+        opa.pack(fill="x", padx=6, pady=(0, 4))
         self.opacity_label = ttk.Label(opa, text="Opacidad: 100%", width=15)
         self.opacity_label.pack(side="left")
         scale = tk.Scale(opa, from_=30, to=100, orient="horizontal", showvalue=False,
@@ -119,7 +174,7 @@ class PanelApp:
             pass
         self.opacity_label.configure(text=f"Opacidad: {pct}%")
 
-    # ----- API para las vistas -----------------------------------------------------------------
+    # ----- API para las vistas -------------------------------------------------------------------
     def notify(self, msg):
         """Mensaje del panel en el log (hilo de la interfaz)."""
         self.log.append(msg)
@@ -174,24 +229,9 @@ class PanelApp:
             self.status.set_progress(0, 1)
             for view in self.views.values():
                 view.on_done(status, label)
+            self.refresh_status()
 
-    # ----- persistencia / cierre -------------------------------------------------------------------
-    def _restore_tab(self):
-        try:
-            with open(paths.PANEL_STATE_PATH, encoding="utf-8") as f:
-                idx = int(json.load(f).get("tab", 0))
-            self.nb.select(min(max(idx, 0), len(TABS) - 1))
-        except (OSError, ValueError, TypeError, tk.TclError):
-            pass
-
-    def _save_tab(self, _evt=None):
-        try:
-            os.makedirs(os.path.dirname(paths.PANEL_STATE_PATH), exist_ok=True)
-            with open(paths.PANEL_STATE_PATH, "w", encoding="utf-8") as f:
-                json.dump({"tab": self.nb.index("current")}, f)
-        except (OSError, tk.TclError):
-            pass
-
+    # ----- rueda del mouse / cierre -----------------------------------------------------------------
     def _on_wheel(self, event):
         w = self.root.winfo_containing(event.x_root, event.y_root)
         while w is not None:

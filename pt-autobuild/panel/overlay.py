@@ -61,7 +61,7 @@ class OverlayManager:
         self.kind = None
 
     def _labels(self, cal_btn, topo_btn):
-        cal_btn.configure(text="Ocultar overlay de calibracion" if self.kind == "cal"
+        cal_btn.configure(text="Ocultar overlay de calibracion" if self.kind in ("cal", "det")
                           else "Mostrar overlay de calibracion")
         topo_btn.configure(text="Ocultar overlay de topologia" if self.kind == "topo"
                            else "Mostrar overlay de topologia")
@@ -99,7 +99,7 @@ class OverlayManager:
 
     def toggle_calibration(self, groups, cal_btn, topo_btn):
         """groups = [(archivo, color, [(nombre, x, y)...])]"""
-        if self.kind == "cal":
+        if self.kind in ("cal", "det"):
             self.close()
             self.notify("[overlay] calibracion: oculto.")
         else:
@@ -109,6 +109,18 @@ class OverlayManager:
                 markers += [(n, x, y, color) for n, x, y in pts]
             self._show("cal", markers, legend)
             self.notify(f"[overlay] calibracion: {len(markers)} puntos.")
+        self._labels(cal_btn, topo_btn)
+
+    def show_detected(self, points, cal_btn, topo_btn):
+        """points = [(nombre, x, y, rechazado)]: lo detectado por la IA en 'Solo mostrar'."""
+        markers = [(f"{n} (RECHAZADO)" if bad else n, x, y, "#ff3b3b" if bad else "#ffe14d")
+                   for n, x, y, bad in points]
+        legend = [("detectado por la IA (no guardado)", "#ffe14d")]
+        if any(p[3] for p in points):
+            legend.append(("rechazado por geometria", "#ff3b3b"))
+        self._show("det", markers, legend)
+        self.notify(f"[overlay] detectado: {len(markers)} punto(s). Se oculta con el boton "
+                    "de overlay de calibracion.")
         self._labels(cal_btn, topo_btn)
 
     def toggle_topology(self, devices, cal_btn, topo_btn):

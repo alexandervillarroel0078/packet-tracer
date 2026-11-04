@@ -14,7 +14,7 @@ class AjustesView:
         self.names = dict(self.c.providers())
         self.current = saved["provider"]
 
-        fk = ttk.LabelFrame(parent, text="Autocalibracion con IA")
+        fk = ttk.LabelFrame(parent, text="IA para autocalibrar")
         fk.pack(fill="x", **PAD)
 
         ttk.Label(fk, text="Proveedor:").pack(anchor="w", padx=6, pady=(4, 0))
@@ -91,6 +91,7 @@ class AjustesView:
     # ----- acciones -------------------------------------------------------------------------
     def _save(self):
         self.app.notify(self.c.save(self.key_var.get(), self.model_var.get(), self.selected()))
+        self.app.refresh_status()
 
     def _test(self):
         self.c.test_connection(self.key_var.get(), self.model_var.get(), self.selected())

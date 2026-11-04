@@ -277,7 +277,7 @@ def log_summary(data, saved_ok, log):
 
 
 def auto_calibrate(*, dry_run=True, force=False, groups="all", test_model="2911",
-                   log=None):
+                   log=None, detected_out=None):
     """
     Autocalibracion con IA (core.autocalibrate). dry_run=True (por defecto): solo muestra lo
     detectado; con dry_run=False escribe en el buscador (filtered_result) y guarda.
@@ -287,7 +287,7 @@ def auto_calibrate(*, dry_run=True, force=False, groups="all", test_model="2911"
     if isinstance(groups, (list, tuple)):
         groups = ",".join(groups)
     return ac.run_autocalibrate(dry_run=dry_run, force=force, groups=ac.parse_groups(groups),
-                                test_model=test_model, log=common.get_log(log))
+                                test_model=test_model, log=common.get_log(log), detected_out=detected_out)
 
 
 def check_calibration(*, groups="all", dry_run=False, log=None):

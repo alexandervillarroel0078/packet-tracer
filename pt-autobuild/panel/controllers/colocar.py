@@ -83,12 +83,15 @@ class ColocarController:
             return PreviewResult(lines, False, str(e))
         return PreviewResult(lines, True)
 
-    def check_preflight(self, text, verify_screen=False):
-        """Preflight de calibracion. verify_screen=True re-verifica en pantalla (sin API)."""
+    def check_preflight(self, text, verify_screen=False, action=None):
+        """
+        Preflight de calibracion. verify_screen=True re-verifica en pantalla (sin API).
+        `action` ("build"/"ip"/"cable") limita la comprobacion a los puntos de esa accion.
+        """
         lines = []
         with capture(lines.append):
             self.last_preflight = preflight.run_preflight(text, verify_screen=verify_screen,
-                                                          log=lines.append)
+                                                          log=lines.append, action=action)
         return self.last_preflight, lines
 
     def start_preflight(self, text):
@@ -113,7 +116,7 @@ class ColocarController:
         if runner.busy:
             return BuildOutcome("busy")
         if not dry_run:
-            result, _ = self.check_preflight(text, verify_screen=False)
+            result, _ = self.check_preflight(text, verify_screen=False, action="build")
             if not result.ok:
                 return BuildOutcome("blocked", result)
 
@@ -141,7 +144,8 @@ class ColocarController:
             if dry_run:
                 ctx.log("  Dry-run: no se guardo nada ni se construye.")
                 return None
-            result = preflight.run_preflight(text, verify_screen=False, log=ctx.log)
+            result = preflight.run_preflight(text, verify_screen=False, log=ctx.log,
+                                             action="build")
             self.last_preflight = result
             if not result.ok:
                 raise PTError("sigue sin estar calibrado: " + ", ".join(result.blocking)

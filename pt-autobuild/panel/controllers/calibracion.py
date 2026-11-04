@@ -39,6 +39,7 @@ GROUP_INSTRUCTIONS = {
 class CalibracionController:
     def __init__(self, shared):
         self.shared = shared
+        self.last_detected = {}      # {nombre: {point, rejected}} de la ultima autocalibracion
 
     # ----- texto de ayuda --------------------------------------------------------------
     @staticmethod
@@ -74,9 +75,11 @@ class CalibracionController:
         groups = self.check_groups(groups)
         self._need_key()
 
+        self.last_detected = {}
+
         def job(ctx):
             return calibrate.auto_calibrate(dry_run=dry_run, force=force, groups=groups,
-                                            log=ctx.log)
+                                            log=ctx.log, detected_out=self.last_detected)
 
         mouse = not dry_run        # el paso de filtered_result hace clic y escribe
         return self.shared.runner.start(label, job, touches_mouse=mouse,
@@ -127,6 +130,11 @@ class CalibracionController:
               and all(isinstance(n, (int, float)) and not isinstance(n, bool) for n in obj)):
             out.append((prefix, int(round(obj[0])), int(round(obj[1]))))
         return out
+
+    def overlay_detected(self):
+        """[(nombre, x, y, rechazado)] de lo que la IA ubico en la ultima autocalibracion."""
+        return [(n, int(d["point"][0]), int(d["point"][1]), bool(d.get("rejected")))
+                for n, d in (self.last_detected or {}).items()]
 
     def overlay_calibration(self):
         """[(archivo, color, [(nombre, x, y)...])] de los JSON de coordenadas."""
