@@ -28,7 +28,7 @@ que viene con Python en Windows.
 
 1. Abre Packet Tracer y déjalo visible, sin ventanas encima, siempre con el mismo tamaño y
    posición y la misma escala de Windows.
-2. En el panel, pestaña **Calibración**, calibra (ver más abajo).
+2. En la pestaña **Simple**, pulsa **Calibrar** (ver "Calibración" más abajo).
 3. En **Colocar**, pega una topología o pulsa **Cargar ejemplo**, y pulsa
    **Vista previa del plan**.
 4. **Empieza siempre con Dry-run marcado** (viene marcado por defecto): calcula y muestra el
@@ -42,6 +42,8 @@ Seguridad mientras actúa:
 - **Failsafe de pyautogui**: lleva el mouse a la esquina superior izquierda de la pantalla para
   abortar al instante.
 - Antes de construir de verdad se comprueba la calibración; si falta algo, no se mueve nada.
+- Si una calibración va a **escribir en el buscador** de Packet Tracer, el log lo avisa **antes**
+  de la cuenta regresiva (y todavía puedes pulsar DETENER).
 
 ## Ajustes: proveedor de IA y API key (opcional)
 
@@ -80,6 +82,58 @@ coinciden. Si no, los clics se desviarán.
 > la ventana de Packet Tracer** (de toda la pantalla si no la encuentra). Cierra lo que no quieras
 > enviar.
 
+## Modo visible (ver todo en vivo)
+
+En la pestaña **Simple**, la casilla **Modo visible** (desmarcada por defecto) muestra el proceso
+mientras ocurre. Al marcarla aparecen dos ventanas que **no roban el foco ni bloquean tus clics**
+(los clics las atraviesan):
+
+- **Barra de acción** (arriba al centro, siempre encima): el paso actual y su resultado en
+  lenguaje simple, con la **duración de cada fase**. Por ejemplo `Paso 3/8: colocar PC1`,
+  `Clic en el buscador`, `Escribiendo: 2960`, `Tecla: Ctrl+A`, `Esperando que filtre (1.0 s)`,
+  `Arrastrando al lienzo`, `Verificando punto: OK 0.97`, `Consultando a la IA... 6.2 s`. Debajo
+  queda el rastro de las últimas fases con lo que tardó cada una.
+- **Overlay de pantalla**: antes de cada clic dibuja ~0.5 s un círculo con cruz en el destino y
+  el nombre del punto (`search_field`, `filtered_result`...); en un arrastre, la línea de origen
+  a destino. Al verificar un punto resalta el recorte buscado (**verde** si coincide, **rojo**
+  si no) con su porcentaje de confianza.
+
+Con el modo visible, el mouse se mueve con `moveTo` y duración (**Duración del mouse**, entre
+0.4 y 0.8 s) y hace una pausa corta antes de cada clic.
+
+Controles (todos en el recuadro «Modo visible»):
+
+| Control | Qué hace |
+|---|---|
+| **Velocidad** (Rápido / Normal / Lento) | Escala **todas** las pausas y duraciones (×0.5, ×1, ×2), con o sin modo visible. |
+| **Pausa / Continuar** | Congela la acción hasta continuar. |
+| **Paso a paso** + **Siguiente ▶** | Espera tu confirmación antes de cada clic. |
+| **DETENER** / failsafe | Siguen activos, también durante una pausa o una espera de «Siguiente». |
+
+> Pausa y Siguiente son botones del panel: al pulsarlos el panel toma el foco; el siguiente clic
+> de la automatización devuelve el foco a Packet Tracer.
+
+**Dry-run + modo visible = simulación visual:** recorre todos los pasos de **Construir**
+mostrando los destinos en el overlay y el texto en la barra, **sin mover el mouse real ni hacer
+clics** (no hay cuenta regresiva y no se guarda el registro de topología). Si el mouse llega a la
+esquina superior izquierda, el failsafe aborta igual.
+
+**Calibrar:** cada autocalibración guarda la captura enviada a la IA con los puntos devueltos
+dibujados en `data/ultima_calibracion.png`; el botón **Ver última calibración** de Simple la abre
+(un punto rechazado por la regla geométrica sale en rojo).
+
+### Cómo está hecho
+
+- `core/log.py`: **una sola función** `emit(texto, kind, point=..., name=...)`. Los mensajes
+  (`kind="log"`) siguen yendo al log; las acciones (`click`, `type`, `key`, `wait`, `drag`,
+  `verify`, `ai`, `step`) llegan como `Event` a los *listeners*. La barra, el overlay y el log del
+  modo visible leen de ahí.
+- `core/hands.py`: **todo** clic, tecla, arrastre y espera de `automation/` y `core/` pasa por
+  aquí. Con el modo visible apagado equivale a llamar a `pyautogui` directamente.
+- `core/visual.py`: estado (visible, simulación, velocidad, pausa, paso a paso).
+- Ni `core/` ni `automation/` usan tkinter; el dibujo vive en `panel/visible_view.py` y la
+  lógica en `panel/controllers/visible.py`.
+
 ## Las pestañas
 
 ### Colocar
@@ -105,23 +159,44 @@ registro en `data/topology/`.
 - Dry-run marcado por defecto, igual que en Colocar.
 
 ### Calibración
-Elige qué calibrar (**main**, **cable**, **ip**); debajo se muestra qué dejar abierto (ver
-"Qué dejar abierto"). Botones de IA (requieren la API key de Ajustes):
+Lo único visible es el **estado resumido** y el botón **Calibrar** (con su Dry-run, marcado por
+defecto). Es el mismo botón que en la pestaña Simple:
+
+1. **Verifica sin API** y sin tocar el mouse: mira la pantalla y comprueba los puntos guardados.
+2. Si todo coincide, muestra **"Ya está calibrado"**.
+3. Si no, **autocalibra solo el grupo main** con IA (requiere la API key de Ajustes), con cuenta
+   regresiva y el aviso previo de que va a escribir en el buscador (un modelo de prueba, 2911, que
+   se borra después). Al terminar resume en lenguaje simple **qué quedó bien** y **qué hay que
+   hacer a mano**.
+
+Con **Dry-run** marcado solo verifica y explica lo que haría; no calibra ni guarda.
+
+#### Herramientas de depuración (sección plegable, cerrada por defecto)
+Todo lo demás está aquí. Las herramientas de IA actúan sobre el grupo **main**:
 
 | Botón | Qué hace |
 |---|---|
-| **Autocalibrar** | Detecta, verifica y **guarda**. Para `filtered_result` hace clic en el buscador, escribe un modelo de prueba (2911) y lo limpia. |
 | **Solo mostrar** | Dry-run: muestra lo detectado, **no guarda y no toca el mouse**. |
-| **Forzar** | Como Autocalibrar, pero ignora la caché. |
+| **Forzar** | Autocalibra ignorando la caché; escribe en el buscador. |
 | **Verificar** | Sin API y sin mouse: re-verifica los puntos guardados y marca los que ya no coinciden. |
 
 Además:
-- **Tabla de estado** por elemento: **OK**, **requiere manual** o **sin verificar**.
+- **Tabla de estado** por elemento (los 16, de todos los grupos): **OK**, **requiere manual** o
+  **sin verificar**.
 - **Captura manual con F8**: elige un punto, pulsa *Capturar punto*, mueve el mouse y pulsa
   **F8** (ESC cancela). También *Calibrar ventana IP*, *Calibrar router (CLI)*, *Calibrar cable*
   y *Calibrar por imágenes de referencia*.
 - **Overlays**: dibujan sobre la pantalla los puntos calibrados o los dispositivos colocados
   (los clics pasan a Packet Tracer).
+
+#### Cable e IP: se calibran bajo demanda
+Los grupos **cable** e **ip** no tienen botones permanentes ni selector. Cuando una acción real
+(p. ej. **Aplicar IP**) detecta que falta calibrar, **no actúa**: aparece un asistente sobre las
+pestañas con la instrucción exacta (p. ej. *"Abre la ventana de IP de una PC en la pestaña
+Desktop"*) y un botón **Continuar** que calibra **solo ese grupo** (con Dry-run, cuenta regresiva
+y DETENER). La ventana de IP se pide en dos pasos (Desktop, y luego IP Configuration con Static);
+el asistente cambia la instrucción cuando termina el primero. Con Dry-run, Continuar solo
+explica. Vuelve a pulsar la acción original cuando el asistente diga que está listo.
 
 ### Ajustes
 Proveedor de IA, API key, modelo, prueba de conexión e informe de DPI (ver arriba).
@@ -129,7 +204,8 @@ Proveedor de IA, API key, modelo, prueba de conexión e informe de DPI (ver arri
 ## Qué dejar abierto para cada calibración
 
 La IA indica qué estados de la interfaz ve. Si falta uno, **no adivina**: deja ese elemento sin
-tocar y te dice qué abrir.
+tocar y te dice qué abrir. **Calibrar** solo usa el primer grupo; para cable e ip es lo que te
+pide el asistente cuando hace falta.
 
 | Grupo | Qué calibra | Déjalo así en Packet Tracer |
 |---|---|---|
@@ -184,7 +260,8 @@ panel/                        interfaz: una vista por pestaña + controllers/ (s
 automation/                   lo que mueve el mouse: build, configure_ip, configure_router,
                               cable_link, add_note, rename_label, move_device, calibrate
 core/                         lógica pura y utilidades: topology, config_gen, autocalibrate,
-                              preflight, settings, coords, ventanas y DPI
+                              preflight, settings, coords, ventanas y DPI, y el modo visible
+                              (log de eventos, hands, visual)
 config/                       device_catalog.json, topologia_ejemplo.json, ejemplos/
 data/                         coordenadas, registro de topología, estado del panel (no se versiona)
 reference_images/             recortes de referencia
@@ -197,9 +274,10 @@ tests/                        pytest
 
 - **El cableado automático aún no existe.** Al construir solo se **calcula** el plan de cables
   (el log lo muestra); los cables se conectan a mano. Las funciones de `automation/cable_link.py`
-  están probadas, pero no están integradas en el panel.
+  están probadas, pero no están integradas en el panel; cuando lo estén, el asistente de cable
+  (ya implementado, `AsistenteController.ensure("cable")`) se encargará de pedir su calibración.
 - **Las coordenadas dependen de la resolución, la escala de Windows y la posición/tamaño de la
-  ventana de Packet Tracer.** Si cambias cualquiera de ellas, usa **Verificar** y recalibra.
+  ventana de Packet Tracer.** Si cambias cualquiera de ellas, pulsa **Calibrar**.
 - Solo Windows (DPI, captura de puntos con F8). Un solo monitor principal.
 - Todo es "a ciegas": no lee la pantalla durante la construcción. Si Packet Tracer pierde el
   foco o aparece un diálogo, los clics caerán donde no deben (usa **DETENER** o el failsafe).
@@ -225,4 +303,5 @@ tests/                        pytest
 ```
 
 Los tests bloquean `pyautogui` (ninguno puede mover el mouse ni teclear) y redirigen `data/` y
-`.env` a una carpeta temporal.
+`.env` a una carpeta temporal. Los tests del modo visible (`tests/test_visible.py`) cubren los
+eventos, las duraciones y la velocidad con `pyautogui` sustituido por un grabador.

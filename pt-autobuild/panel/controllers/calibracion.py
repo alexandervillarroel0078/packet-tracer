@@ -9,11 +9,12 @@ from core import coords as coords_io
 from core import paths, settings
 from core.errors import PTError
 from core.topology import TopologyFileError, load_topology
+from panel.controllers.calibrar import search_notice
 
 # Acciones que pueden mover el mouse (todas con dry_run=True por defecto). Autocalibrar y
 # Forzar hacen clic en el buscador y escriben un modelo de prueba (filtered_result);
 # "Solo mostrar" y "Verificar" nunca tocan el mouse.
-MOUSE_ACTIONS = ("autocalibrate", "force")
+MOUSE_ACTIONS = ("calibrate", "autocalibrate", "force")
 
 GROUP_LABELS = {"main": "Pantalla principal (coords.json)",
                 "cable": "Cables (cable_coords.json)",
@@ -83,7 +84,17 @@ class CalibracionController:
 
         mouse = not dry_run        # el paso de filtered_result hace clic y escribe
         return self.shared.runner.start(label, job, touches_mouse=mouse,
-                                        countdown=self.shared.seconds() if mouse else 0)
+                                        countdown=self.shared.seconds() if mouse else 0,
+                                        notice=search_notice(groups, dry_run))
+
+    # ----- boton "Calibrar" (el mismo que en la pestana Simple) -----------------------------
+    def calibrate(self, dry_run=True):
+        """Verifica sin API y, si hace falta, autocalibra el grupo main."""
+        return self.shared.calibrator.calibrate(dry_run=dry_run)
+
+    def status_text(self):
+        """Estado resumido de la calibracion (sin pantalla ni API)."""
+        return self.shared.calibrator.status_text()
 
     def autocalibrate(self, groups, dry_run=True):
         """Autocalibrar con IA. dry_run=False guarda y escribe en el buscador."""

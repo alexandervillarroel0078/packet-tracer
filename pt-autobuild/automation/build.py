@@ -117,11 +117,10 @@ Seguridad:
 import datetime
 import json
 import os
-import time
 
 from core import coords as coords_io
 from core import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui (fija DPI awareness)
-from core import paths
+from core import hands, paths, visual
 from core.errors import CancelledError, NotCalibratedError
 from core.paths import CATALOG_PATH
 
@@ -178,18 +177,18 @@ def place_device(coords, model, x, y, pause, filter_delay):
     sfx, sfy = coords["search_field"]
     frx, fry = coords["filtered_result"]
 
-    pyautogui.click(sfx, sfy)          # 1. foco en el buscador (y desarma colocacion previa)
-    time.sleep(pause)
-    pyautogui.hotkey("ctrl", "a")      # 2. seleccionar texto previo
-    time.sleep(0.15)
-    pyautogui.press("delete")          #    borrarlo
-    time.sleep(0.15)
-    pyautogui.write(str(model), interval=0.05)  # 3. escribir el modelo
-    time.sleep(filter_delay)           # 4. dejar que filtre
-    pyautogui.click(frx, fry)          # 5. clic en el resultado unico
-    time.sleep(pause)
-    pyautogui.click(x, y)              # 6. clic en el lienzo
-    time.sleep(pause)
+    hands.click(sfx, sfy, "search_field")   # 1. foco en el buscador (y desarma colocacion previa)
+    hands.sleep(pause)
+    hands.hotkey("ctrl", "a")          # 2. seleccionar texto previo
+    hands.sleep(0.15)
+    hands.press("delete")              #    borrarlo
+    hands.sleep(0.15)
+    hands.type_text(model, interval=0.05)       # 3. escribir el modelo
+    hands.wait(filter_delay, "Esperando que filtre")   # 4. dejar que filtre
+    hands.click(frx, fry, "filtered_result")    # 5. clic en el resultado unico
+    hands.sleep(pause)
+    hands.click(x, y, "canvas", text="Clic en el lienzo (colocar)")   # 6. clic en el lienzo
+    hands.sleep(pause)
 
 
 def print_plan(resolved, placements, warnings, dry_run, log=None):
@@ -333,6 +332,12 @@ def print_grouped_plan(parsed, placements, cabling_plan, notes, iface_notes,
 
 
 def run_grouped(text, catalog, args, log=None, cancel=None):
+    """Sintaxis por redes. Con dry-run + Modo visible recorre los pasos SIN mover el mouse."""
+    with visual.simulating(args.dry_run and visual.state.visible):
+        return _run_grouped(text, catalog, args, log, cancel)
+
+
+def _run_grouped(text, catalog, args, log=None, cancel=None):
     """Camino de la sintaxis por redes. No toca el camino de la sintaxis simple.
 
     args: BuildOptions (dry_run, countdown, pause, filter_delay)."""
@@ -364,12 +369,13 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
 
     print_grouped_plan(parsed, placements, cabling_plan, notes, iface_notes,
                        link_notes, pcs_to_cfg, ip_missing, warnings, args.dry_run, log)
-    if args.dry_run:
-        return None
+    if args.dry_run and not visual.state.simulate:
+        return None   # dry-run normal: solo el plan
 
     pyautogui.FAILSAFE = True
     pyautogui.PAUSE = 0.0
-    start_countdown(args.countdown, log, cancel)
+    if not visual.state.simulate:      # la simulacion visual no toma el mouse: sin cuenta
+        start_countdown(args.countdown, log, cancel)
 
     # Punto FIJO y neutro para recuperar el foco de la ventana entre nota y
     # nota. NO se reutiliza la posicion de cada nota: si dos notas quedan
@@ -406,6 +412,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
     try:
         for p in placements:
             common.check_cancel(cancel)
+            hands.step(done_steps + 1, total_steps, f"colocar {p['nombre']}")
             place_device(coords, p["model"], p["x"], p["y"],
                          args.pause, args.filter_delay)
             placed_ok += 1
@@ -416,6 +423,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
         # el mismo valor de arranque (ver rename_label.LABEL_OFFSET_Y).
         for p in placements:
             common.check_cancel(cancel)
+            hands.step(done_steps + 1, total_steps, f"renombrar {p['nombre']}")
             rename_label.rename_label(p["x"], p["y"], p["nombre"],
                                       category=p["category"], pause=args.pause)
             renamed_ok += 1
@@ -429,6 +437,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
                   f"del clic en Packet Tracer; ver print del plan arriba).")
         for n in notes:
             common.check_cancel(cancel)
+            hands.step(done_steps + 1, total_steps, "escribir nota")
             # focus_xy recupera el foco de la ventana entre nota y nota
             # (tras el Escape anterior el foco sale de Packet Tracer). Usa
             # el punto neutro fijo, NO la posicion de la nota (ver comentario
@@ -442,6 +451,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
         # real, solo coloca el texto en el lienzo.
         for n in iface_notes:
             common.check_cancel(cancel)
+            hands.step(done_steps + 1, total_steps, "escribir nota de interfaz")
             add_note.place_note(n["texto"], n["x"], n["y"],
                                 pause=args.pause, focus_xy=note_focus_xy)
             iface_notes_ok += 1
@@ -450,6 +460,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
         # de cada 'ENLACES:'). Mismo mecanismo que las notas de arriba.
         for n in link_notes:
             common.check_cancel(cancel)
+            hands.step(done_steps + 1, total_steps, "escribir nota de enlace")
             add_note.place_note(n["texto"], n["x"], n["y"],
                                 pause=args.pause, focus_xy=note_focus_xy)
             link_notes_ok += 1
@@ -476,6 +487,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
             for p in pcs_to_cfg:
                 try:
                     common.check_cancel(cancel)
+                    hands.step(done_steps + 1, total_steps, f"configurar IP de {p['nombre']}")
                     configure_ip.apply_ip(ip_data, p["x"], p["y"], p["ip"],
                                           p["mascara"], p["gateway"],
                                           pause=args.pause)
@@ -501,8 +513,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
                     log(f"    FALLO {p['nombre']:<10} ({type(e).__name__}: {e})")
 
     try:
-        w, h = pyautogui.size()
-        pyautogui.moveTo(w // 2, h // 2)
+        hands.park()
     except Exception:  # noqa: BLE001
         pass
 
@@ -526,7 +537,7 @@ def run_grouped(text, catalog, args, log=None, cancel=None):
     log("  Recuerda: los cables se conectan manualmente.")
     log("=" * 72)
 
-    if placed_ok > 0:
+    if placed_ok > 0 and not args.dry_run:      # la simulacion no guarda registro
         now = datetime.datetime.now()
         record = build_grouped_record(
             text, placements[:placed_ok], notes[:notes_ok],
@@ -551,6 +562,15 @@ class BuildOptions:
 
 
 def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown=5,
+                   catalog_path=None, log=None, cancel=None, progress=None):
+    """Ver _build_topology. Con dry_run y Modo visible: simulacion visual (sin mouse real)."""
+    with visual.simulating(dry_run and visual.state.visible):
+        return _build_topology(text, dry_run=dry_run, pause=pause, filter_delay=filter_delay,
+                               countdown=countdown, catalog_path=catalog_path, log=log,
+                               cancel=cancel, progress=progress)
+
+
+def _build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown=5,
                    catalog_path=None, log=None, cancel=None, progress=None):
     """
     Coloca una topologia en Packet Tracer (sintaxis simple "3 routers, 2 switches, 5 PC" o
@@ -594,13 +614,14 @@ def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown
 
     print_plan(resolved, placements, layout_warnings, args.dry_run, log)
 
-    if args.dry_run:
-        return None
+    if args.dry_run and not visual.state.simulate:
+        return None   # dry-run normal: solo el plan
 
     pyautogui.FAILSAFE = True
     pyautogui.PAUSE = 0.0
 
-    start_countdown(args.countdown, log, cancel)
+    if not visual.state.simulate:      # la simulacion visual no toma el mouse: sin cuenta
+        start_countdown(args.countdown, log, cancel)
 
     attempted = {"router": 0, "switch": 0, "end_device": 0}
     done_steps = 0
@@ -616,6 +637,7 @@ def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown
     try:
         for p in placements:
             common.check_cancel(cancel)
+            hands.step(done_steps + 1, len(placements), f"colocar {p['model']}")
             place_device(coords, p["model"], p["x"], p["y"],
                          args.pause, args.filter_delay)
             attempted[p["category"]] += 1
@@ -633,8 +655,7 @@ def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown
 
     # mouse a un sitio neutro
     try:
-        w, h = pyautogui.size()
-        pyautogui.moveTo(w // 2, h // 2)
+        hands.park()
     except Exception:  # noqa: BLE001
         pass
 
@@ -656,7 +677,7 @@ def build_topology(text, *, dry_run=True, pause=0.4, filter_delay=0.4, countdown
 
     # Registro de la topologia resultante (solo si de verdad se coloco algo).
     # Se guardan unicamente los dispositivos efectivamente colocados.
-    if placed_ok > 0:
+    if placed_ok > 0 and not args.dry_run:      # la simulacion no guarda registro
         now = datetime.datetime.now()
         record = build_topology_record(text, placements[:placed_ok], coords, now)
         try:

@@ -11,10 +11,11 @@ TYPE_COLORS = {"router": "#3aa0ff", "switch": "#22e34a"}
 TYPE_COLOR_DEFAULT = "#ff9a2e"
 
 
-def _otext(cv, x, y, text, color, anchor="w"):
+def _otext(cv, x, y, text, color, anchor="w", tags=()):
     cv.create_text(x + 1, y + 1, text=text, fill="#000000", anchor=anchor,
-                   font=("Segoe UI", 9, "bold"))
-    cv.create_text(x, y, text=text, fill=color, anchor=anchor, font=("Segoe UI", 9, "bold"))
+                   font=("Segoe UI", 9, "bold"), tags=tags)
+    cv.create_text(x, y, text=text, fill=color, anchor=anchor, font=("Segoe UI", 9, "bold"),
+                   tags=tags)
 
 
 def _marker(cv, x, y, name, color):
@@ -27,7 +28,7 @@ def _marker(cv, x, y, name, color):
 
 
 def make_click_through(win):
-    """WS_EX_LAYERED | WS_EX_TRANSPARENT sobre el HWND: los clics pasan al de abajo."""
+    """WS_EX_LAYERED | TRANSPARENT | NOACTIVATE sobre el HWND: los clics pasan y no roba foco."""
     if os.name != "nt":
         return False
     try:
@@ -39,7 +40,8 @@ def make_click_through(win):
         user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
         hwnd = user32.GetAncestor(win.winfo_id(), 2) or win.winfo_id()
         cur = user32.GetWindowLongW(hwnd, -20)
-        user32.SetWindowLongW(hwnd, -20, cur | 0x00080000 | 0x00000020)
+        # LAYERED | TRANSPARENT | TOOLWINDOW | NOACTIVATE: clics de paso y nunca roba el foco
+        user32.SetWindowLongW(hwnd, -20, cur | 0x00080000 | 0x00000020 | 0x00000080 | 0x08000000)
         return True
     except (OSError, AttributeError):
         return False

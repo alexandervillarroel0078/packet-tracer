@@ -155,9 +155,7 @@ def test_calibracion_instrucciones_tabla_y_sin_api_key(app, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     c = app.views["Calibracion"]
     assert "buscador" in c.instr.cget("text")
-    c.group_vars["cable"].set(True)
-    c._refresh_instructions()
-    assert "rayo" in c.instr.cget("text")
+    assert c.groups() == ["main"]                  # cable e ip ya no tienen selector
     assert len(c.tree.get_children()) == 16
     app.guard(c._show)()                           # sin API key: error claro en el panel
     assert "[ERROR] falta la API key" in log_text(app)
@@ -234,8 +232,11 @@ def test_simple_ejemplo_gris_dry_run_y_estado(app):
     s.dry_var.set(False)
     assert s.btn_build.real is True
     assert "Calibración:" in app.calib_label.cget("text") and "API:" in app.api_label.cget("text")
-    # sin calibrar aparece el boton Autocalibrar junto al estado
-    assert app.btn_autocal.winfo_manager() == "pack"
+    # un unico boton de calibracion en Simple, que sigue el modo Dry-run
+    assert s.btn_cal.real is True and s.btn_cal.cget("text") == "Calibrar (mueve el mouse)"
+    s.dry_var.set(True)
+    assert s.btn_cal.real is False and s.btn_cal.cget("text") == "Calibrar"
+    assert not hasattr(app, "btn_autocal")
 
 
 def test_simple_construir_sin_calibrar_dry_run_explica_en_lenguaje_simple(app):
@@ -246,3 +247,86 @@ def test_simple_construir_sin_calibrar_dry_run_explica_en_lenguaje_simple(app):
     pump(app)
     text = log_text(app)
     assert "Voy a calibrar" in text and "search_field" not in text
+
+
+def _all_buttons(widget):
+    out = []
+    for w in widget.winfo_children():
+        if w.winfo_class() in ("Button", "TButton"):
+            out.append(w)
+        out += _all_buttons(w)
+    return out
+
+
+def test_simple_solo_tiene_un_boton_de_calibracion(app):
+    s = app.views["Simple"]
+    texts = [b.cget("text") for b in _all_buttons(s.btn_build.master)]
+    # un solo boton que calibra; el otro solo muestra la ultima captura (no actua)
+    assert [t for t in texts if "alibr" in t] == ["Calibrar", "Ver última calibración"]
+
+
+def test_calibracion_solo_muestra_calibrar_y_el_resto_esta_plegado(app):
+    c = app.views["Calibracion"]
+    assert c.debug.opened is False and c.debug.body.winfo_manager() == ""
+    assert c.btn_cal.cget("text") == "Calibrar" and c.dry_var.get() is True
+    assert c.summary.cget("text").startswith("Falta calibrar")
+    # lo de depuracion vive dentro de la seccion plegable
+    for w in (c.btn_show, c.btn_force, c.btn_verify, c.tree, c.btn_cap, c.btn_ov_cal):
+        assert str(w).startswith(str(c.debug.body))
+    assert not hasattr(c, "group_vars") and not hasattr(c, "btn_auto")
+    c.debug.toggle()
+    assert c.debug.opened and c.debug.body.winfo_manager() == "pack"
+    assert "Herramientas de depuración" in c.debug.toggle_btn.cget("text")
+
+
+def test_asistente_aparece_al_faltar_calibracion_y_continuar_respeta_el_dry_run(app):
+    import json
+    os.makedirs(os.path.dirname(paths.TOPOLOGY_ACTUAL_PATH), exist_ok=True)
+    with open(paths.TOPOLOGY_ACTUAL_PATH, "w", encoding="utf-8") as f:
+        json.dump({"dispositivos": [{"id": 1, "tipo": "end_device", "modelo": "PC",
+                                     "nombre": "PC1", "posicion": [500, 400]}]}, f)
+    cfg = app.views["Configurar"]
+    cfg.refresh_devices()
+    cfg.pc_var.set("PC1")
+    cfg.ip_var.set("10.0.0.2")
+    cfg.mask_var.set("255.255.255.0")
+    cfg.gw_var.set("10.0.0.1")
+    assert not app.wizard.visible
+    cfg.dry_var.set(False)
+    app.guard(cfg._ip)()
+    pump(app)
+    assert app.wizard.visible
+    assert "Desktop" in app.wizard.body.cget("text") and "desktop_tab" not in app.wizard.body.cget("text")
+    cfg.dry_var.set(True)                       # Continuar en dry-run: solo explica
+    app.guard(app.wizard._continue)()
+    pump(app)
+    assert "Dry-run" in log_text(app) and app.wizard.visible
+    app.wizard._cancel()
+    assert not app.wizard.visible
+
+
+def test_modo_visible_desmarcado_por_defecto_y_sin_ventanas(app):
+    s = app.views["Simple"]
+    assert s.visible_var.get() is False
+    assert app.shared.visual.visible is False and app.visible_view.active is False
+
+
+def test_modo_visible_crea_la_barra_y_el_overlay_y_los_cierra(app):
+    s = app.views["Simple"]
+    s.visible_var.set(True)
+    s._on_visible()
+    assert app.visible_view.active and app.shared.visual.visible is True
+    from core.log import Event
+    line = app.visible_view.on_event(Event("click", "Clic en el buscador", elapsed=0.5))
+    assert "Clic en el buscador" in line
+    app.visible_view.on_event(Event("click", "Clic en el buscador", point=(10, 10),
+                                    name="search_field", duration=0.5, data={"preview": True}))
+    app.visible_view.tick()
+    s._toggle_pause()
+    assert s.pause_btn.cget("text") == "Continuar"
+    s._on_speed(2)
+    assert app.shared.visual.state.speed == 2.0
+    s.visible_var.set(False)
+    s._on_visible()
+    assert not app.visible_view.active and app.shared.visual.state.paused is False
+    assert s.pause_btn.cget("text") == "Pausa"

@@ -3,40 +3,53 @@
 import tkinter as tk
 from tkinter import ttk
 
-from panel.common import COLOR_DRY, COLOR_REAL, FONT_BTN
+from panel.common import (COLOR_DRY, COLOR_REAL, FONT_BTN, CollapsibleFrame, ModeButton,
+                          bind_mode)
 from panel.overlay import OverlayManager
 
 PAD = dict(padx=8, pady=4)
 
 
 class CalibracionView:
+    """Visible: estado resumido + Calibrar. Todo lo demas, en "Herramientas de depuracion"."""
+
+    DEBUG_GROUPS = ["main"]       # cable e ip se calibran bajo demanda (asistente)
+
     def __init__(self, parent, controller, app):
         self.c, self.app = controller, app
         self.overlays = OverlayManager(parent.winfo_toplevel(), app.notify)
-        self.group_vars = {g: tk.BooleanVar(value=(g == "main")) for g in ("main", "cable", "ip")}
+        self.dry_var = tk.BooleanVar(value=True)            # MARCADO por defecto
 
-        # ---- grupos + instrucciones ------------------------------------------------------
-        fg = ttk.LabelFrame(parent, text="Que calibrar")
+        # ---- lo unico visible: estado resumido + Calibrar ---------------------------------
+        fc = ttk.LabelFrame(parent, text="Calibración")
+        fc.pack(fill="x", **PAD)
+        self.summary = tk.Label(fc, text="", justify="left", anchor="w", wraplength=340)
+        self.summary.pack(fill="x", padx=6, pady=(6, 2))
+        ttk.Checkbutton(fc, variable=self.dry_var,
+                        text="Dry-run (solo verifica y explica; no mueve el mouse)").pack(
+            anchor="w", padx=6)
+        self.btn_cal = ModeButton(fc, "Calibrar", "Calibrar (mueve el mouse)",
+                                  app.guard(self._calibrate), height=2)
+        self.btn_cal.pack(fill="x", padx=6, pady=(2, 6))
+        bind_mode(self.btn_cal, self.dry_var)
+
+        # ---- herramientas de depuracion (plegable, cerrada) ---------------------------------
+        self.debug = CollapsibleFrame(parent, "Herramientas de depuración", opened=False)
+        self.debug.pack(fill="x", **PAD)
+        dbg = self.debug.body
+
+        fg = ttk.LabelFrame(dbg, text="Qué dejar abierto (pantalla principal)")
         fg.pack(fill="x", **PAD)
-        row = ttk.Frame(fg)
-        row.pack(fill="x", padx=6, pady=4)
-        for g, label in (("main", "main"), ("cable", "cable"), ("ip", "ip")):
-            ttk.Checkbutton(row, text=label, variable=self.group_vars[g],
-                            command=self._refresh_instructions).pack(side="left", padx=4)
         self.instr = tk.Label(fg, text="", justify="left", anchor="w", wraplength=340,
                               bg="#fff8e1", fg="#333", relief="solid", bd=1)
-        self.instr.pack(fill="x", padx=6, pady=(0, 6))
+        self.instr.pack(fill="x", padx=6, pady=6)
 
         # ---- IA ---------------------------------------------------------------------------------
-        fa = ttk.LabelFrame(parent, text="Autocalibracion con IA")
+        fa = ttk.LabelFrame(dbg, text="Autocalibracion con IA")
         fa.pack(fill="x", **PAD)
-        self.btn_auto = tk.Button(fa, text="Autocalibrar (guarda y escribe en el buscador)",
-                                  bg=COLOR_REAL, fg="white", font=FONT_BTN,
-                                  command=app.guard(self._auto))
-        self.btn_auto.pack(fill="x", padx=6, pady=(4, 2))
         self.btn_show = tk.Button(fa, text="Solo mostrar (dry-run, no guarda)", bg=COLOR_DRY,
                                   fg="white", font=FONT_BTN, command=app.guard(self._show))
-        self.btn_show.pack(fill="x", padx=6, pady=2)
+        self.btn_show.pack(fill="x", padx=6, pady=(4, 2))
         self.btn_force = tk.Button(fa, text="Forzar (ignora la cache; escribe en el buscador)",
                                    bg=COLOR_REAL, fg="white", font=FONT_BTN,
                                    command=app.guard(self._force))
@@ -47,7 +60,7 @@ class CalibracionView:
         self.btn_verify.pack(fill="x", padx=6, pady=(2, 6))
 
         # ---- tabla de estado -------------------------------------------------------------------
-        ft = ttk.LabelFrame(parent, text="Estado por elemento")
+        ft = ttk.LabelFrame(dbg, text="Estado por elemento")
         ft.pack(fill="x", **PAD)
         self.tree = ttk.Treeview(ft, columns=("archivo", "estado"), height=9)
         self.tree.heading("#0", text="Elemento")
@@ -64,7 +77,7 @@ class CalibracionView:
         self.btn_status.pack(fill="x", padx=6, pady=(0, 6))
 
         # ---- captura manual (F8) -----------------------------------------------------------------
-        fm = ttk.LabelFrame(parent, text="Captura manual (mueve el mouse y pulsa F8)")
+        fm = ttk.LabelFrame(dbg, text="Captura manual (mueve el mouse y pulsa F8)")
         fm.pack(fill="x", **PAD)
         r = ttk.Frame(fm)
         r.pack(fill="x", padx=6, pady=4)
@@ -95,7 +108,7 @@ class CalibracionView:
         self.btn_img.pack(fill="x", padx=6, pady=(1, 6))
 
         # ---- overlays -------------------------------------------------------------------------------
-        fo = ttk.LabelFrame(parent, text="Overlays")
+        fo = ttk.LabelFrame(dbg, text="Overlays")
         fo.pack(fill="x", **PAD)
         self.btn_ov_cal = ttk.Button(fo, text="Mostrar overlay de calibracion",
                                      command=app.guard(self._ov_cal))
@@ -105,7 +118,7 @@ class CalibracionView:
         self.btn_ov_topo.pack(fill="x", padx=6, pady=(0, 6))
 
         # botones que NO actuan sobre el mouse tambien se bloquean mientras corre algo
-        for b in (self.btn_auto, self.btn_show, self.btn_force, self.btn_verify, self.btn_cap,
+        for b in (self.btn_cal, self.btn_show, self.btn_force, self.btn_verify, self.btn_cap,
                   self.btn_ip, self.btn_router, self.btn_cable, self.btn_img):
             app.register_action(b)
         self._refresh_instructions()
@@ -113,7 +126,7 @@ class CalibracionView:
 
     # ----- helpers -----------------------------------------------------------------------------------
     def groups(self):
-        return [g for g, v in self.group_vars.items() if v.get()]
+        return list(self.DEBUG_GROUPS)
 
     def _refresh_instructions(self):
         self.instr.configure(text=self.c.instructions(self.groups()))
@@ -124,13 +137,16 @@ class CalibracionView:
         for r in rows:
             self.tree.insert("", "end", text=r["name"], values=(r["file"], r["label"]),
                              tags=(r["status"],))
+        text = self.c.status_text()
+        self.summary.configure(text=text, fg="#2e7d32" if text.startswith("Calibración lista")
+                               else "#c62828")
         counts = self.c.status_counts(rows)
         self.app.notify(f"[calibracion] OK={counts['ok']}  requiere manual={counts['manual']}  "
                         f"sin verificar={counts['unverified']}")
 
     # ----- acciones -------------------------------------------------------------------------------------
-    def _auto(self):
-        self.c.autocalibrate(self.groups(), dry_run=False)
+    def _calibrate(self):
+        self.c.calibrate(dry_run=self.dry_var.get())
 
     def _show(self):
         self.c.show_only(self.groups())

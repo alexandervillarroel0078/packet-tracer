@@ -34,7 +34,7 @@ import sys
 import tempfile
 from typing import NamedTuple
 
-from core import ai_providers, settings
+from core import ai_providers, annotate, hands, settings
 from core.ai_providers import AIConfig
 from core.errors import AutoCalibrateError
 from core.log import emit
@@ -585,7 +585,8 @@ def png_b64(img, size):
 # =====================================================================
 def call_vision_api(cfg, img_b64, prompt):
     """Peticion con imagen al proveedor de `cfg`. Devuelve el texto (el JSON pedido)."""
-    return ai_providers.send(cfg, prompt, image_b64=img_b64, max_tokens=1024)
+    with hands.phase("ai", "Consultando a la IA..."):
+        return ai_providers.send(cfg, prompt, image_b64=img_b64, max_tokens=1024)
 
 
 def test_connection(key, model, provider=None):
@@ -721,9 +722,13 @@ def verify_and_refine(el, point, shot, ppu, screen_size, cfg, dry_run, log=emit)
     attempts = 0
     while True:
         tmpl, corner, offset = make_template(shot, (point[0] * ppu, point[1] * ppu))
+        hands.clear()            # que ninguna marca del overlay salga en la captura
         fresh, ppu2 = capture()  # captura NUEVA: el recorte debe re-encontrarse ahi
         conf, found = match_template(fresh, tmpl)
-        if evaluate_match(conf, found, corner):
+        matched = evaluate_match(conf, found, corner)
+        hands.verify_result(el.name, matched, conf, point=tuple(point), rect=[
+            corner[0] / ppu2, corner[1] / ppu2, tmpl.size[0] / ppu2, tmpl.size[1] / ppu2])
+        if matched:
             fname = save_reference(el.fname, tmpl, dry_run)
             return {"status": "ok", "point": list(point), "confidence": round(conf, 3),
                     "template": fname, "template_offset": list(offset),
@@ -804,7 +809,17 @@ def filtered_point_error(point, search_point, min_above=FILTERED_MIN_ABOVE,
     return None
 
 
-def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log, shot_ppu=None):
+def _note_point(annot, name, xy, bad=None):
+    """Anota un punto devuelto por la IA para dibujarlo en data/ultima_calibracion.png."""
+    if annot is None:
+        return
+    annot.setdefault("pts", {})[name] = (xy[0], xy[1])
+    if bad:
+        annot.setdefault("rejected", set()).add(name)
+
+
+def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log, shot_ppu=None,
+                        annot=None):
     """
     filtered_result automatico: clic en search_field, escribe un modelo de prueba, espera,
     nueva captura y pide a la IA SOLO el primer resultado filtrado. Siempre limpia el buscador.
@@ -825,25 +840,25 @@ def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log, shot_pp
         upp = compute_units_per_px(crop_px, sent, ppu)
         pt = list(image_to_screen(pts[el.ask][0], pts[el.ask][1], env["window"][:2], upp))
         bad = filtered_point_error(pt, sp)
+        _note_point(annot, el.ask, pts[el.ask], bad)
         if bad:
             log(f"  [!] filtered_result rechazado: {bad}")
             return {"status": "manual", "point": pt, "reason": bad, "rejected": True}
         return {"status": "unverified", "point": pt,
                 "reason": "dry-run: detectado, sin verificar ni guardar"}
     from core import dpi_aware  # noqa: F401  fija la DPI awareness; debe importarse antes de pyautogui
-    import time
-    import pyautogui
 
     def clear_box():
-        pyautogui.click(sp[0], sp[1])
-        pyautogui.hotkey("ctrl", "a")
-        pyautogui.press("delete")
+        hands.click(sp[0], sp[1], "search_field")
+        hands.hotkey("ctrl", "a")
+        hands.press("delete")
 
     log(f"  filtered_result: escribiendo '{test_model}' en el buscador...")
     try:
         clear_box()
-        pyautogui.write(test_model, interval=0.05)
-        time.sleep(FILTER_WAIT)
+        hands.type_text(test_model, interval=0.05)
+        hands.wait(FILTER_WAIT, "Esperando que filtre")
+        hands.clear()
         shot, ppu = capture()
         crop, crop_px = crop_units(shot, ppu, env["window"])
         sent = compute_send_size(*crop_px)
@@ -854,6 +869,7 @@ def _calibrate_filtered(el, results, cfg, env, test_model, dry_run, log, shot_pp
         upp = compute_units_per_px(crop_px, sent, ppu)
         pt = list(image_to_screen(pts[el.ask][0], pts[el.ask][1], env["window"][:2], upp))
         bad = filtered_point_error(pt, sp)
+        _note_point(annot, el.ask, pts[el.ask], bad)
         if bad:
             log(f"  [!] filtered_result rechazado: {bad}")
             return {"status": "manual", "point": pt, "reason": bad, "rejected": True}
@@ -897,6 +913,7 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     log(f"  Ventana PT : {env['window']}   Grupos: {', '.join(groups)}")
     if win_warn:
         log(f"  [!] {win_warn}")
+    hands.clear()
     shot, ppu = capture()
     provider, model_id = current_ai()
     env = dict(env, provider=provider, model=model_id)   # la cache depende de proveedor+modelo
@@ -935,6 +952,8 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
     sent = compute_send_size(*crop_px)
     log(f"  Enviando captura {crop_px[0]}x{crop_px[1]} (redimensionada a {sent[0]}x{sent[1]})...")
     pts, states, warns = ask_multi(cfg, crop, sent, ai_els)
+    annot = {"img": crop, "sent": sent, "pts": {k: (v[0], v[1]) for k, v in pts.items()},
+             "rejected": set()}
     reasons = {w.split(':')[0]: w for w in warns}
     for w in warns:
         if 'rechazada' in w or w.startswith('coordenadas normalizadas'):
@@ -996,9 +1015,14 @@ def run_autocalibrate(dry_run=False, force=False, groups=GROUPS, test_model=TEST
             log("  filtered_result omitido: ya tiene valor (usa --force para recalcularlo).")
         else:
             results["filtered_result"] = _calibrate_filtered(
-                fr, results, creds, env, test_model, dry_run, log, (shot, ppu))
+                fr, results, creds, env, test_model, dry_run, log, (shot, ppu), annot)
             r = results["filtered_result"]
             log(f"    {'filtered_result':<24} {r['status'].upper():<7} conf={r.get('confidence', '-')}")
+
+    saved_img = annotate.save_last_calibration(annot["img"], annot["sent"], annot["pts"],
+                                               annot["rejected"])
+    if saved_img:
+        log("  Captura enviada a la IA con los puntos devueltos: data/ultima_calibracion.png")
 
     if detected_out is not None:
         detected_out.clear()

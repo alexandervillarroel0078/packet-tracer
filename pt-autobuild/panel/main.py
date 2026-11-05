@@ -12,6 +12,7 @@ from tkinter import ttk
 from core import log as core_log
 from core.errors import PTError
 from panel.ajustes import AjustesView
+from panel.asistente import AsistenteView
 from panel.calibracion import CalibracionView
 from panel.colocar import ColocarView
 from panel.common import LogView, StatusBar, make_scroll_tab
@@ -24,6 +25,7 @@ from panel.controllers.configurar import ConfigurarController
 from panel.controllers.runner import ActionRunner
 from panel.controllers.simple import SimpleController
 from panel.simple import SimpleView
+from panel.visible_view import VisibleView
 
 TABS = ("Simple", "Avanzado", "Ajustes")
 ADVANCED_TABS = ("Colocar", "Configurar", "Calibracion")      # sub-pestanas de Avanzado
@@ -37,6 +39,7 @@ class PanelApp:
         self.root = root
         self.runner = runner or ActionRunner()
         self.shared = Shared(self.runner)
+        self.visible_view = VisibleView(root, self.shared.visual)
         self._actions = []          # widgets que se deshabilitan mientras corre algo
         self.views = {}
 
@@ -87,6 +90,10 @@ class PanelApp:
         inner = self._add_tab(self.nb, "Ajustes")
         self.views["Ajustes"] = AjustesView(inner, self.controllers["Ajustes"], self)
 
+        # asistente de calibracion por demanda (cable / ip): aparece sobre las pestanas
+        conf = self.views["Configurar"]
+        self.wizard = AsistenteView(root, self.shared.assistant, self, lambda: conf.dry_var.get())
+
         # la topologia de las acciones avanzadas es la de Avanzado > Colocar o, si esta
         # vacia, la que se escribio en la pantalla simple
         colocar, simple = self.views["Colocar"], self.views["Simple"]
@@ -115,9 +122,6 @@ class PanelApp:
         self.calib_label.pack(side="left")
         self.api_label = tk.Label(top, text="API: ...", font=font)
         self.api_label.pack(side="left", padx=(14, 0))
-        self.btn_autocal = ttk.Button(top, text="Autocalibrar",
-                                      command=self.guard(self._autocalibrate))
-        self.register_action(self.btn_autocal)
 
     def refresh_status(self):
         """Actualiza la linea de estado: calibracion y clave de la IA."""
@@ -128,13 +132,12 @@ class PanelApp:
         self.calib_label.configure(text=info.calibration_text,
                                    fg=COLOR_OK if info.calibration_ok else COLOR_BAD)
         self.api_label.configure(text=info.api_text, fg=COLOR_OK if info.api_ok else COLOR_BAD)
-        if info.calibration_ok:
-            self.btn_autocal.pack_forget()
-        else:
-            self.btn_autocal.pack(side="right")
 
-    def _autocalibrate(self):
-        self.controllers["Simple"].autocalibrate(dry_run=self.views["Simple"].dry_var.get())
+    def refresh_wizard(self):
+        """Muestra u oculta el asistente segun haya una calibracion pendiente."""
+        wizard = getattr(self, "wizard", None)
+        if wizard is not None:
+            wizard.refresh()
 
     # ----- opciones de ventana (dentro de Avanzado) -------------------------------------------------
     def _build_window_options(self, parent):
@@ -194,6 +197,8 @@ class PanelApp:
                 return fn(*a, **k)
             except Exception as e:  # noqa: BLE001
                 self.report_error(e)
+            finally:
+                self.refresh_wizard()
         return wrapper
 
     def register_action(self, widget):
@@ -210,12 +215,22 @@ class PanelApp:
     def _poll(self):
         for ev in self.runner.drain():
             self._handle(ev)
+        self.visible_view.tick()
         self.root.after(80, self._poll)
+
+    def set_visible(self, on):
+        """Casilla «Modo visible»: aplica el estado y muestra/oculta la barra y el overlay."""
+        self.shared.visual.set_visible(on)
+        self.visible_view.set_active(on)
 
     def _handle(self, ev):
         kind = ev[0]
         if kind == "log":
             self.log.append(ev[1])
+        elif kind == "event":
+            line = self.visible_view.on_event(ev[1])      # barra + overlay; devuelve la linea de log
+            if line:
+                self.log.append(line)
         elif kind == "state":
             _, state, label = ev
             self.status.set_state(state, label)
@@ -230,6 +245,7 @@ class PanelApp:
             for view in self.views.values():
                 view.on_done(status, label)
             self.refresh_status()
+            self.refresh_wizard()
 
     # ----- rueda del mouse / cierre -----------------------------------------------------------------
     def _on_wheel(self, event):
@@ -246,6 +262,7 @@ class PanelApp:
         if view is not None:
             view.close()
         core_log.set_sink(None)
+        self.visible_view.close()
         self.root.destroy()
 
 

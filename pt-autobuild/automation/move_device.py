@@ -27,16 +27,15 @@ Seguridad:
 
 import json
 import os
-import time
 
 from core import canvas
 from core import paths
 from core.errors import PTError
 from core.topology import load_topology, find_device
 
-import pyautogui
 
 from core import ptwindow  # noqa: E402
+from core import hands  # noqa: E402
 from automation import common
 
 DEFAULT_MARGIN = 30  # px de separacion con los bordes del canvas para posicion aleatoria
@@ -129,19 +128,9 @@ def move_device(name, x=None, y=None, *, random_pos=False, margin=DEFAULT_MARGIN
 
     def drag():
         try:
-            pyautogui.moveTo(cx, cy)
-            time.sleep(pause)
-            pyautogui.mouseDown()
-            time.sleep(pause)
-            pyautogui.moveTo(tx, ty, duration=max(0.0, duration))
-            time.sleep(pause)
-            pyautogui.mouseUp()
-            time.sleep(pause)
+            hands.drag((cx, cy), (tx, ty), duration=duration, pause=pause,
+                       name=device["nombre"])      # nunca deja el boton pulsado
         finally:
-            try:
-                pyautogui.mouseUp()  # nunca dejar el boton pulsado
-            except Exception:  # noqa: BLE001
-                pass
             ptwindow.park_mouse()
 
     try:

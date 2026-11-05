@@ -9,6 +9,7 @@ from core import paths, preflight
 from core.errors import PTError
 from core.log import capture
 from core.topology import TopologyFileError, load_topology
+from panel.controllers.calibrar import search_notice
 
 # Acciones que pueden mover el mouse (todas con dry_run=True por defecto).
 MOUSE_ACTIONS = ("build", "recalibrate_and_continue", "move_device")
@@ -155,7 +156,8 @@ class ColocarController:
 
         label = ("Recalibrar (solo mostrar)" if dry_run else "Recalibrar y continuar")
         return self.shared.runner.start(label, job, touches_mouse=not dry_run,
-                                        countdown=0 if dry_run else self.shared.seconds())
+                                        countdown=0 if dry_run else self.shared.seconds(),
+                                        notice=search_notice(groups, dry_run))
 
     # ----- mover dispositivo -----------------------------------------------------------
     def list_devices(self):

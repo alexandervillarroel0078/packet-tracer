@@ -54,14 +54,13 @@ Seguridad: failsafe de pyautogui (mouse a la esquina superior izquierda =
 aborta), pausa configurable entre pasos.
 """
 
-import time
 
 from core import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui
 from core import canvas
 
-import pyautogui
 
 from core import ptwindow  # noqa: E402
+from core import hands  # noqa: E402
 from core.errors import PTError
 from automation import common
 
@@ -97,12 +96,12 @@ def rename_label(x, y, new_name, category="end_device", *, pause=0.4,
     lx, ly = int(x), int(round(y + oy))
 
     ptwindow.click_point((lx, ly), pause)
-    pyautogui.hotkey("ctrl", "a")             # seleccionar el nombre actual
-    time.sleep(0.15)
-    pyautogui.press("delete")                 # borrarlo (defensivo; puede
-    time.sleep(0.15)                          # que ya quede auto-seleccionado)
-    pyautogui.typewrite(str(new_name), interval=0.03)
-    time.sleep(pause)
+    hands.hotkey("ctrl", "a")                 # seleccionar el nombre actual
+    hands.sleep(0.15)
+    hands.press("delete")                     # borrarlo (defensivo; puede
+    hands.sleep(0.15)                         # que ya quede auto-seleccionado)
+    hands.type_text(new_name, interval=0.03)
+    hands.sleep(pause)
 
     if confirm_key == "click-away":
         if away_xy is None:
@@ -110,8 +109,8 @@ def rename_label(x, y, new_name, category="end_device", *, pause=0.4,
             away_xy = (x0 + 8, y0 + 8)
         ptwindow.click_point((int(away_xy[0]), int(away_xy[1])), pause)
     else:
-        pyautogui.press(confirm_key)
-        time.sleep(pause)
+        hands.press(confirm_key)
+        hands.sleep(pause)
 
     return lx, ly
 

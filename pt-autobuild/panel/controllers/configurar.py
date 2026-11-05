@@ -59,7 +59,15 @@ class ConfigurarController:
                 and d.get("tipo") not in ("router", "switch")]
 
     # ----- IP -------------------------------------------------------------------------
+    def _ip_ready(self, skip_open):
+        """Con dry-run no hace falta. Real: si falta calibrar la ventana IP, deja el asistente."""
+        names = [k for k, _ in configure_ip.FIELDS] if skip_open else None
+        return self.shared.assistant.ensure("ip", names)
+
     def apply_ip(self, name, ip, mask, gateway, skip_open=False, dry_run=True):
+        if not dry_run and not self._ip_ready(skip_open):
+            return False
+
         def job(ctx):
             return configure_ip.configure_device_ip(
                 name, ip, mask, gateway, skip_open=skip_open, dry_run=dry_run, countdown=0,
@@ -74,6 +82,8 @@ class ConfigurarController:
         if not devices:
             raise PTError("el registro no tiene PCs con IP. Coloca una topologia por redes "
                           "con IPs primero.")
+        if not dry_run and not self._ip_ready(skip_open):
+            return False
 
         def job(ctx):
             ok = failed = 0

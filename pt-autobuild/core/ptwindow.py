@@ -13,39 +13,36 @@ calibran una vez como coordenadas fijas.
     park_mouse()                           mouse a un sitio neutro (centro)
 """
 
-import time
-
 from core import dpi_aware  # noqa: F401  DEBE ir antes de pyautogui
-import pyautogui
+from core import hands
 
 
 def open_device_window(x, y, open_delay):
-    pyautogui.doubleClick(x, y)
-    time.sleep(open_delay)
+    hands.click(x, y, "dispositivo", double=True, text="Doble clic en el dispositivo")
+    hands.sleep(open_delay)
 
 
-def click_point(point, delay):
-    pyautogui.click(point[0], point[1])
-    time.sleep(delay)
+def click_point(point, delay, name=None):
+    hands.click(point[0], point[1], name)
+    hands.sleep(delay)
 
 
-def type_into(point, value, pause):
+def type_into(point, value, pause, name=None):
     """Clic en un campo de texto, borra lo que haya y escribe value."""
-    pyautogui.click(point[0], point[1])
-    time.sleep(pause)
-    pyautogui.hotkey("ctrl", "a")
-    time.sleep(0.15)
-    pyautogui.press("delete")
-    time.sleep(0.15)
-    pyautogui.write(str(value), interval=0.05)
-    time.sleep(pause)
+    hands.click(point[0], point[1], name)
+    hands.sleep(pause)
+    hands.hotkey("ctrl", "a")
+    hands.sleep(0.15)
+    hands.press("delete")
+    hands.sleep(0.15)
+    hands.type_text(value, interval=0.05)
+    hands.sleep(pause)
 
 
 def close_window(close_button, pause):
-    pyautogui.click(close_button[0], close_button[1])
-    time.sleep(pause)
+    hands.click(close_button[0], close_button[1], "close_button", text="Clic en cerrar la ventana")
+    hands.sleep(pause)
 
 
 def park_mouse():
-    w, h = pyautogui.size()
-    pyautogui.moveTo(w // 2, h // 2)
+    hands.park()

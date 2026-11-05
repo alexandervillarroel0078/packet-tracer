@@ -76,3 +76,14 @@ def isolated_ai_env(monkeypatch):
                 "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL"):
         monkeypatch.setenv(var, "")      # vacio = sin definir; monkeypatch lo restaura al salir
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_visual_state():
+    """El estado del Modo visible es global: cada test arranca con los valores por defecto."""
+    from core import visual
+    visual.state.reset()
+    visual.state.cancel = None
+    yield
+    visual.state.reset()
+    visual.state.cancel = None

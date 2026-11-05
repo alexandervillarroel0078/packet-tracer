@@ -21,9 +21,12 @@ from core import paths, settings
 from core.errors import PTError
 from panel.controllers import Shared
 from panel.controllers import ajustes as ajustes_mod
+from panel.controllers import asistente as asistente_mod
 from panel.controllers import calibracion as calibracion_mod
+from panel.controllers import calibrar as calibrar_mod
 from panel.controllers import colocar as colocar_mod
 from panel.controllers import configurar as configurar_mod
+from panel.controllers import simple as simple_mod
 from panel.controllers.ajustes import AjustesController
 from panel.controllers.calibracion import CalibracionController
 from panel.controllers.colocar import ColocarController
@@ -69,6 +72,18 @@ def registry(calibrated):
     ]}
     with open(paths.TOPOLOGY_ACTUAL_PATH, "w", encoding="utf-8") as f:
         json.dump(topo, f)
+
+
+IP_COORDS = {k: [100 + i, 200] for i, k in enumerate(
+    ("desktop_tab", "ip_configuration_item", "static_radio", "close_button",
+     "ipv4_address", "subnet_mask", "default_gateway"))}
+CABLE_COORDS = {"cable_icon": [50, 900], "list_offset": [10, 20], "list_row_height": 18}
+
+
+@pytest.fixture
+def ip_calibrated(registry):
+    with open(paths.IP_CONFIG_COORDS_PATH, "w", encoding="utf-8") as f:
+        json.dump(IP_COORDS, f)
 
 
 class Recorder:
@@ -384,7 +399,7 @@ def test_configurar_ip_dry_run_por_defecto(shared, registry, monkeypatch):
     assert k["dry_run"] is True and rec.mouse_flags == [False]
 
 
-def test_configurar_ip_real_con_cuenta_regresiva(shared, registry, monkeypatch):
+def test_configurar_ip_real_con_cuenta_regresiva(shared, ip_calibrated, monkeypatch):
     shared.countdown = 3
     rec = Recorder(shared)
     monkeypatch.setattr(configure_ip, "configure_device_ip", rec)
@@ -607,7 +622,8 @@ def test_test_connection_sin_red_o_clave(monkeypatch):
 # =====================================================================
 # Auditoria de seguridad del panel
 # =====================================================================
-CONTROLLER_MODULES = (colocar_mod, configurar_mod, calibracion_mod, ajustes_mod)
+CONTROLLER_MODULES = (colocar_mod, configurar_mod, calibracion_mod, ajustes_mod, simple_mod,
+                      calibrar_mod, asistente_mod)
 
 
 def test_toda_accion_que_mueve_el_mouse_tiene_dry_run_true_por_defecto():
@@ -620,7 +636,7 @@ def test_toda_accion_que_mueve_el_mouse_tiene_dry_run_true_por_defecto():
             assert "dry_run" in params, f"{cls.__name__}.{name}"
             assert params["dry_run"].default is True, f"{cls.__name__}.{name}"
             total += 1
-    assert total == 8
+    assert total == 8 + 2 + 1 + 1 + 1       # + calibrate/simple, calibrar, asistente
 
 
 def test_las_vistas_pasan_dry_run_explicito_a_cada_accion_con_mouse():
@@ -637,7 +653,7 @@ def test_las_vistas_pasan_dry_run_explicito_a_cada_accion_con_mouse():
                 found += 1
                 if "dry_run" not in {kw.arg for kw in node.keywords}:
                     offenders.append(f"{os.path.basename(path)}:{node.lineno} {node.func.attr}")
-    assert found >= 8
+    assert found >= 10
     assert offenders == []
 
 

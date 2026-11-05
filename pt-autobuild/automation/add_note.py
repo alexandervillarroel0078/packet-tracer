@@ -29,14 +29,13 @@ Seguridad: failsafe de pyautogui (mouse a la esquina superior izquierda =
 aborta), pausa configurable entre pasos.
 """
 
-import time
 
 from core import dpi_aware  # noqa: F401  DEBE importarse antes de pyautogui
 from core import canvas
 
-import pyautogui
 
 from core import ptwindow  # noqa: E402
+from core import hands  # noqa: E402
 from core.errors import PTError
 from automation import common
 
@@ -70,13 +69,13 @@ def place_note(text, x, y, *, pause=0.4, tool_delay=0.4, type_interval=0.03,
     """
     if focus_xy is not None:
         ptwindow.click_point((int(focus_xy[0]), int(focus_xy[1])), pause)
-    pyautogui.press("n")
-    time.sleep(tool_delay)
-    ptwindow.click_point((int(x), int(y)), pause)
-    pyautogui.typewrite(str(text), interval=max(0.0, type_interval))
-    time.sleep(pause)
-    pyautogui.press("esc")                               # Escape solo: guarda
-    time.sleep(pause)
+    hands.press("n")
+    hands.sleep(tool_delay)
+    ptwindow.click_point((int(x), int(y)), pause, "nota")
+    hands.type_text(text, interval=max(0.0, type_interval))
+    hands.sleep(pause)
+    hands.press("esc")                                   # Escape solo: guarda
+    hands.sleep(pause)
 
 
 def add_note(text, x=None, y=None, *, random_pos=False, margin=DEFAULT_MARGIN,

@@ -10,7 +10,10 @@ defecto y esta listado en MOUSE_ACTIONS del controlador; la vista debe pasar dry
 de forma explicita (y mostrar el boton en modo "actua de verdad").
 """
 
+from panel.controllers.asistente import AsistenteController
+from panel.controllers.calibrar import CalibrarController
 from panel.controllers.runner import ActionRunner
+from panel.controllers.visible import VisibleController
 
 
 class Shared:
@@ -20,6 +23,9 @@ class Shared:
         self.runner = runner or ActionRunner()
         self.countdown = countdown          # segundos antes de tomar el mouse
         self.topology_getter = lambda: ""   # la vista de Colocar lo reemplaza
+        self.calibrator = CalibrarController(self)    # boton unico "Calibrar"
+        self.assistant = AsistenteController(self)    # cable / ip bajo demanda
+        self.visual = VisibleController()             # Modo visible, velocidad, pausa
 
     def topology_text(self):
         return (self.topology_getter() or "").strip()

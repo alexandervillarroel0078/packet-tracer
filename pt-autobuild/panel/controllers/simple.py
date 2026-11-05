@@ -10,9 +10,10 @@ from automation import build
 from core import autocalibrate as ac
 from core import preflight, settings
 from core.errors import CancelledError, PTError
+from panel.controllers import calibrar
 
 # Acciones que pueden mover el mouse (todas con dry_run=True por defecto).
-MOUSE_ACTIONS = ("build", "autocalibrate")
+MOUSE_ACTIONS = ("build", "calibrate")
 
 EXAMPLE_TEXT = "1 switch, 1 PC"
 
@@ -44,46 +45,18 @@ class SimpleController:
         ok = self.check_calibration().ok
         has_key = bool(settings.read_settings().get("has_key"))
         return StatusInfo(
-            ok, "Calibración: OK" if ok else "Calibración: falta calibrar (Autocalibrar)",
+            ok, "Calibración: OK" if ok else "Calibración: falta calibrar (pulsa Calibrar)",
             has_key, "API: conectada" if has_key else "API: sin clave")
 
-    # ----- que hara la autocalibracion -------------------------------------------------------
-    @staticmethod
-    def calibration_steps():
-        return ["Voy a calibrar Packet Tracer automaticamente:",
-                "  1. Tomo una captura de la pantalla (Packet Tracer debe verse completo).",
-                "  2. Se la envio a la IA para que ubique el buscador y el area de trabajo.",
-                "  3. Escribo un modelo de prueba en el buscador para ubicar el primer "
-                "resultado y lo borro despues.",
-                "  4. Compruebo que cada punto quedo bien."]
+    # ----- calibrar ---------------------------------------------------------------------------
+    calibration_steps = staticmethod(calibrar.calibration_steps)
 
     def _require_key(self):
-        if not settings.read_settings().get("has_key"):
-            raise PTError("falta la clave de la IA. Ponla en la pestaña Ajustes para poder "
-                          "calibrar automaticamente.")
+        calibrar.require_key()
 
-    # ----- acciones ------------------------------------------------------------------------------
-    def autocalibrate(self, dry_run=True):
-        """Solo autocalibrar. En dry-run explica lo que haria y no toca nada."""
-        from automation import calibrate
-        runner = self.shared.runner
-        if runner.busy:
-            return False
-        if not dry_run:
-            self._require_key()
-
-        def job(ctx):
-            if dry_run:
-                for line in self.calibration_steps():
-                    ctx.log(line)
-                ctx.log("Dry-run: no se hizo nada. Desmarcalo para calibrar de verdad.")
-                return None
-            calibrate.auto_calibrate(dry_run=False, groups=["main"], log=ctx.log)
-            self._finish_calibration(ctx)
-
-        label = "Autocalibrar (solo mostrar)" if dry_run else "Autocalibrar"
-        return runner.start(label, job, touches_mouse=not dry_run,
-                            countdown=0 if dry_run else self.shared.seconds())
+    def calibrate(self, dry_run=True):
+        """El unico boton de calibracion: verifica sin API y, si hace falta, autocalibra main."""
+        return self.shared.calibrator.calibrate(dry_run=dry_run)
 
     def _finish_calibration(self, ctx):
         result = self.check_calibration()
@@ -130,6 +103,7 @@ class SimpleController:
                 raise PTError(preflight.plain(str(e))) from e
 
         label = "Simulacro de construccion" if dry_run else "Construir"
+        notice = None if ready else calibrar.search_notice(["main"], dry_run)
         return runner.start(label, job, touches_mouse=not dry_run,
-                            countdown=0 if dry_run else self.shared.seconds())
+                            countdown=0 if dry_run else self.shared.seconds(), notice=notice)
 

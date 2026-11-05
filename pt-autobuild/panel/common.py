@@ -123,6 +123,30 @@ def bind_mode(button, dry_var):
     refresh()
 
 
+class CollapsibleFrame(ttk.Frame):
+    """Seccion plegable (cerrada por defecto). El contenido va en .body."""
+
+    def __init__(self, parent, text, opened=False):
+        super().__init__(parent)
+        self.text = text
+        self.opened = False
+        self.toggle_btn = ttk.Button(self, command=self.toggle)
+        self.toggle_btn.pack(fill="x")
+        self.body = ttk.Frame(self)
+        self.set_opened(opened)
+
+    def set_opened(self, opened):
+        self.opened = bool(opened)
+        self.toggle_btn.configure(text=("▾ " if self.opened else "▸ ") + self.text)
+        if self.opened:
+            self.body.pack(fill="both", expand=True)
+        else:
+            self.body.pack_forget()
+
+    def toggle(self):
+        self.set_opened(not self.opened)
+
+
 def make_scroll_tab(notebook, text, height=360):
     """Pestana con scroll vertical interno. Devuelve (frame_contenido, canvas)."""
     page = ttk.Frame(notebook)

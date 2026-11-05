@@ -27,16 +27,15 @@ Seguridad: cuenta regresiva, failsafe de pyautogui (mouse a la esquina
 superior izquierda = aborta), pausa configurable entre clics/comandos.
 """
 
-import time
 
 from core import coords as coords_io  # noqa: E402
 from core import paths, ptwindow, validate  # noqa: E402
 from core.errors import PTError
 from core.topology import load_topology, find_device  # noqa: E402
 
-import pyautogui  # noqa: E402
 
 from automation import common
+from core import hands  # noqa: E402
 
 SKIP = "skip"
 
@@ -91,12 +90,12 @@ def calibrate_router(*, only_missing=False, countdown=3, log=None, cancel=None):
 
 def run_cli_sequence(hostname, cmd_pause):
     """[Enter] -> enable -> configure terminal -> hostname X -> end."""
-    pyautogui.press("enter")
-    time.sleep(cmd_pause)
+    hands.press("enter")
+    hands.sleep(cmd_pause)
     for cmd in ("enable", "configure terminal", f"hostname {hostname}", "end"):
-        pyautogui.typewrite(cmd, interval=0.03)
-        pyautogui.press("enter")
-        time.sleep(cmd_pause)
+        hands.type_text(cmd, interval=0.03)
+        hands.press("enter")
+        hands.sleep(cmd_pause)
 
 
 def set_router_hostname(name, hostname, *, dry_run=True, topology_path=None, pause=0.4,

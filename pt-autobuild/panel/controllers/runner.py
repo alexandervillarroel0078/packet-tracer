@@ -20,7 +20,7 @@ import threading
 import traceback
 
 from core import log as core_log
-from core import paths
+from core import paths, visual
 from core.errors import CancelledError, PTError
 
 IDLE, COUNTDOWN, RUNNING = "idle", "countdown", "running"
@@ -38,6 +38,9 @@ class RunContext:
 
     def progress(self, done, total):
         self._runner._put(("progress", int(done), int(total)))
+
+    def event(self, ev):
+        self._runner._put(("event", ev))
 
 
 class ActionRunner:
@@ -73,10 +76,12 @@ class ActionRunner:
         self._put(("log", str(msg)))
 
     # ----- control ----------------------------------------------------
-    def start(self, label, fn, *, touches_mouse=False, countdown=0, on_done=None):
+    def start(self, label, fn, *, touches_mouse=False, countdown=0, on_done=None, notice=None):
         """
         Lanza fn(ctx). Devuelve False (y avisa en el log) si ya hay una accion en curso.
-        countdown se ignora si touches_mouse es False.
+        countdown se ignora si touches_mouse es False. notice (lista de lineas) se escribe en
+        el log justo antes de la cuenta regresiva: sirve para avisar de lo que va a hacer
+        (p. ej. escribir en el buscador) cuando todavia se puede pulsar Detener.
         """
         with self._lock:
             if self.busy:
@@ -87,7 +92,8 @@ class ActionRunner:
             self.touches_mouse = bool(touches_mouse)
             self.state = COUNTDOWN if (touches_mouse and countdown > 0) else RUNNING
         self._put(("state", self.state, label))
-        args = (label, fn, bool(touches_mouse), max(0, int(countdown)), on_done)
+        args = (label, fn, bool(touches_mouse), max(0, int(countdown)), on_done,
+                list(notice or []))
         if self.sync:
             self._run(*args)
         else:
@@ -106,11 +112,15 @@ class ActionRunner:
             self._thread.join(timeout)
 
     # ----- hilo -------------------------------------------------------
-    def _run(self, label, fn, touches_mouse, countdown, on_done):
+    def _run(self, label, fn, touches_mouse, countdown, on_done, notice=()):
         ctx = RunContext(self)
         status = "ok"
         result = None
-        with core_log.capture(ctx.log):
+        # mismos eventos para la barra, el overlay y el log del Modo visible (los "log" ya
+        # llegan por el sink); Detener tambien corta pausas y esperas de "Siguiente"
+        visual.state.cancel = self.cancel
+        with core_log.capture(ctx.log), core_log.listen(
+                lambda ev: ev.kind != "log" and ctx.event(ev)):
             try:
                 ctx.log("")
                 ctx.log("=" * 40)
@@ -118,6 +128,8 @@ class ActionRunner:
                 ctx.log("=" * 40)
                 if touches_mouse:
                     self._arm_failsafe()
+                    for line in notice:
+                        ctx.log(line)
                     for i in range(countdown, 0, -1):
                         if self.cancel.is_set():
                             raise CancelledError("cancelado durante la cuenta regresiva: "
@@ -150,6 +162,9 @@ class ActionRunner:
                     if where:
                         ctx.log(f"  (detalle tecnico guardado en {where})")
             finally:
+                visual.state.paused = False
+                visual.state.next_step.clear()
+                visual.state.cancel = None
                 self.state = IDLE
                 self._put(("state", IDLE, label))
                 self._put(("done", status, label))

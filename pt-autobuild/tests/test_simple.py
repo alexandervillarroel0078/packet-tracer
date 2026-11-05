@@ -62,7 +62,7 @@ def test_mensajes_sin_nombres_internos():
 # ----- estado de una linea ------------------------------------------------------------------
 def test_estado_sin_calibrar_y_sin_clave(shared, isolated_data_dir, no_key):
     info = SimpleController(shared).status()
-    assert info.calibration_text == "Calibración: falta calibrar (Autocalibrar)"
+    assert info.calibration_text == "Calibración: falta calibrar (pulsa Calibrar)"
     assert info.api_text == "API: sin clave" and not info.api_ok
 
 
@@ -146,14 +146,6 @@ def test_construir_texto_vacio_y_errores_en_lenguaje_simple(shared, calibrated, 
     SimpleController(shared).build("1 switch")
     text = "\n".join(logs(shared))
     assert "el buscador de dispositivos" in text and "search_field" not in text
-
-
-def test_autocalibrar_dry_run_no_llama_a_la_ia(shared, isolated_data_dir, monkeypatch):
-    cal = Recorder()
-    monkeypatch.setattr(calibrate, "auto_calibrate", cal)
-    SimpleController(shared).autocalibrate()
-    assert cal.calls == []
-    assert "Dry-run" in "\n".join(logs(shared))
 
 
 # ----- filtered_result ----------------------------------------------------------------------------
